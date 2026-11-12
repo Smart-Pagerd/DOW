@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOWIE · Cotizaciones</title>
+<link rel="icon" href="logo.png">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="logo"><img src="logo.png" alt="DOWIE"></div>
+  <nav><button id="tNew" class="on">Nueva cotización</button><button id="tCat">Catálogo <span id="cnt">0</span></button></nav>
+</header>
+
+<section id="vNew">
+  <h1>Nueva cotización</h1>
+  <p class="sub">Sube la cotización del proveedor (Neutral Logistics o Pier 17) para generar la de DOWIE.</p>
+  <div class="card" id="upCard">
+    <div class="drop" id="drop"><b>Arrastra el PDF aquí o haz clic para seleccionarlo</b><small>Solo archivos .pdf</small></div>
+    <input type="file" id="file" accept="application/pdf" hidden>
+    <div class="steps" id="steps"><span class="st">Leyendo PDF</span><span class="st">Desglosando cargos</span><span class="st">Aplicando precio DOWIE</span></div>
+    <div style="text-align:center"><button class="link" id="blank">Crear una en blanco</button></div>
+  </div>
+
+  <div id="editor">
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <h3>Datos de la cotización</h3>
+        <div class="g3"><div><label>N.º de cotización</label><input id="fNum"></div><div><label>Fecha</label><input type="date" id="fDate"></div><div><label>Vencimiento</label><input type="date" id="fDue"></div></div>
+        <div class="g2" style="margin-top:10px"><div><label>Facturar a</label><input id="fBill"></div><div><label>Enviar a</label><input id="fShip"></div></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h3>Servicios y cargos</h3>
+        <div id="lines"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn gh sm" data-add="">Agregar línea</button>
+          <button class="btn gh sm" data-add="aduana">Gestión aduanal</button>
+          <button class="btn gh sm" data-add="terrestre">Flete terrestre</button>
+          <button class="btn gh sm" id="reset">Recalcular precio</button>
+        </div>
+      </div>
+      <div class="card"><h3>Nota para el cliente</h3><textarea id="fNotes" rows="8"></textarea></div>
+    </div>
+    <div class="side">
+      <div class="card"><h3>Comparativa</h3>
+        <div class="cmp">
+          <div><span>Original (<span id="oSrc">NL</span>)</span><span class="or" id="oTot">$0.00</span></div>
+          <div><span>DOWIE (antes de ITBIS)</span><span class="big" id="dSub">$0.00</span></div>
+          <div><span>Diferencia</span><span><span class="pill" id="dif">0%</span></span></div>
+        </div>
+      </div>
+      <div class="card tot"><h3>Totales</h3><div id="taxes"></div><div class="t"><span>Total</span><span id="gTot">$0.00</span></div></div>
+      <button class="btn or" id="bPdf">Descargar PDF</button>
+      <button class="btn" id="bSave">Guardar en catálogo</button>
+    </div>
+  </div>
+</section>
+
+<section id="vCat" class="cat">
+  <h1>Catálogo</h1>
+  <p class="sub">Cotizaciones DOWIE guardadas.</p>
+  <div class="bar"><input id="q" placeholder="Buscar por número o cliente"><button class="btn gh" id="exp">Exportar</button><button class="btn gh" id="imp">Importar</button><input type="file" id="impf" accept=".json" hidden></div>
+  <div id="list"></div>
+</section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="logo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
