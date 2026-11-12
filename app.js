@@ -11,7 +11,7 @@ let Q=null,editId=null,catalog=[],busy=false;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),3200)}
 function count(el,to){const from=parseFloat(el.dataset.v||0);el.dataset.v=to;if(matchMedia('(prefers-reduced-motion:reduce)').matches){el.textContent=fmt(to);return}const t0=performance.now();(function s(t){const k=Math.min(1,(t-t0)/600),e=1-Math.pow(1-k,3);el.textContent=fmt(from+(to-from)*e);if(k<1)requestAnimationFrame(s)})(t0)}
 function tab(n){$('#vNew').style.display=n?'none':'';$('#vCat').classList.toggle('on',!!n);$('#tNew').classList.toggle('on',!n);$('#tCat').classList.toggle('on',!!n)}
-$('#tNew').onclick=()=>tab(0);$('#tCat').onclick=()=>tab(1);
+$('#tNew').onclick=()=>tab(0);$('#tCat').onclick=()=>{tab(1);refresh()};
 
 /* ---------- PDF reading ---------- */
 async function readPdf(file){
@@ -170,18 +170,30 @@ function download(q){
 }
 $('#bPdf').onclick=()=>Q&&download(Q);
 
-/* ---------- Catalog (shared db with local fallback) ---------- */
+/* ---------- Catálogo ---------- */
+/* ---------- Supabase (REST, sin librerías) ---------- */
+const SB_URL=(window.SUPABASE_URL||'').replace(/\/+$/,''),SB_KEY=window.SUPABASE_KEY||'';
+const REMOTE=!!SB_URL&&SB_KEY.length>20&&!/PEGA/.test(SB_KEY);
+const SBH=()=>{const h={apikey:SB_KEY,'Content-Type':'application/json'};if(SB_KEY.startsWith('eyJ'))h.Authorization='Bearer '+SB_KEY;return h};
+const SBT=SB_URL+'/rest/v1/cotizaciones';
+const toRow=c=>({id:c.id,number:c.number,date:c.date||null,due:c.due||null,bill:c.bill||'',ship:c.ship||'',notes:c.notes||'',lines:c.lines||[],orig_ref:c.origRef||'',orig_src:c.origSrc||'',orig_total:c.origTotal||0,sub:c.sub||0,total:c.total||0,created_at:c.createdAt||Date.now(),updated_at:Date.now()});
+const fromRow=r=>({id:r.id,number:r.number,date:r.date||'',due:r.due||'',bill:r.bill||'',ship:r.ship||'',notes:r.notes||'',lines:r.lines||[],origRef:r.orig_ref||'',origSrc:r.orig_src||'',origTotal:Number(r.orig_total)||0,sub:Number(r.sub)||0,total:Number(r.total)||0,createdAt:Number(r.created_at)||0,updatedAt:Number(r.updated_at)||0});
+async function sbList(){const r=await fetch(SBT+'?select=*&order=created_at.desc',{headers:SBH()});if(!r.ok)throw new Error('HTTP '+r.status);return(await r.json()).map(fromRow)}
+async function sbUpsert(c){const r=await fetch(SBT+'?on_conflict=id',{method:'POST',headers:Object.assign(SBH(),{Prefer:'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify(toRow(c))});if(!r.ok)throw new Error('HTTP '+r.status)}
+async function sbDel(id){const r=await fetch(SBT+'?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:SBH()});if(!r.ok)throw new Error('HTTP '+r.status)}
+async function refresh(){if(!REMOTE)return;try{catalog=await sbList();lsSave();renderCat()}catch(e){toast('No se pudo conectar con la base de datos; se muestra la copia local')}}
+
 const LS='dowie_cts';
 function lsLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return[]}}
 function lsSave(){try{localStorage.setItem(LS,JSON.stringify(catalog))}catch(e){}}
-function save(){
+async function save(){
   if(!Q)return;if(!Q.lines.length)return toast('Agrega al menos una línea');
   const T=totals(Q),id=editId||'q'+Date.now().toString(36);
   const rec={number:Q.number,date:Q.date,due:Q.due,bill:Q.bill,ship:Q.ship,notes:Q.notes,lines:Q.lines,origRef:Q.origRef||'',origSrc:Q.origSrc||'',origTotal:Q.origTotal||0,total:T.total,sub:T.sub,createdAt:Q.createdAt||Date.now(),updatedAt:Date.now()};
   try{
-    {const i=catalog.findIndex(c=>c.id===id);const o=Object.assign({id},rec);if(i>=0)catalog[i]=o;else catalog.push(o);lsSave();renderCat()}
+    const o=Object.assign({id},rec);if(REMOTE)await sbUpsert(o);const i=catalog.findIndex(c=>c.id===id);if(i>=0)catalog[i]=o;else catalog.push(o);lsSave();renderCat();
     editId=id;Q.createdAt=rec.createdAt;toast('Guardada en el catálogo');
-  }catch(e){toast('No se pudo guardar')}
+  }catch(e){toast(REMOTE?'No se pudo guardar en la base de datos':'No se pudo guardar')}
 }
 $('#bSave').onclick=save;
 function renderCat(){
@@ -192,16 +204,16 @@ function renderCat(){
     <div style="display:flex;gap:6px"><button class="btn sm" data-a="pdf">PDF</button><button class="btn gh sm" data-a="edit">Editar</button><button class="btn gh sm" data-a="del">Eliminar</button></div></div>`).join(''):'<div class="card empty">No hay cotizaciones guardadas.</div>';
 }
 $('#q').oninput=renderCat;
-$('#list').addEventListener('click',e=>{
+$('#list').addEventListener('click',async e=>{
   const b=e.target.closest('[data-a]');if(!b)return;const c=catalog.find(x=>x.id===b.closest('.item').dataset.id);if(!c)return;
   if(b.dataset.a==='pdf')download(c);
   if(b.dataset.a==='edit'){tab(0);startQuote(null,c)}
   if(b.dataset.a==='del'){
     if(!b.dataset.sure){b.dataset.sure=1;b.textContent='¿Seguro?';setTimeout(()=>{b.dataset.sure='';b.textContent='Eliminar'},3000);return}
-    catalog=catalog.filter(x=>x!==c);lsSave();renderCat();toast('Cotización eliminada')
+    try{if(REMOTE)await sbDel(c.id);catalog=catalog.filter(x=>x!==c);lsSave();renderCat();toast('Cotización eliminada')}catch(er){toast('No se pudo eliminar')}
   }
 });
 $('#exp').onclick=()=>{const b=new Blob([JSON.stringify(catalog,null,1)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='catalogo-dowie.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
 $('#imp').onclick=()=>$('#impf').click();
-$('#impf').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const a=JSON.parse(await f.text());if(!Array.isArray(a))throw 0;a.forEach(c=>{if(c&&c.id&&c.lines){const i=catalog.findIndex(x=>x.id===c.id);if(i>=0)catalog[i]=c;else catalog.push(c)}});lsSave();renderCat();toast('Catálogo importado')}catch(er){toast('Archivo no válido')}e.target.value=''};
-catalog=lsLoad();renderCat();
+$('#impf').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const a=JSON.parse(await f.text());if(!Array.isArray(a))throw 0;a.forEach(c=>{if(c&&c.id&&c.lines){const i=catalog.findIndex(x=>x.id===c.id);if(i>=0)catalog[i]=c;else catalog.push(c)}});if(REMOTE)for(const c of a){if(c&&c.id&&c.lines)await sbUpsert(c)}lsSave();renderCat();toast('Catálogo importado')}catch(er){toast('Archivo no válido')}e.target.value=''};
+catalog=lsLoad();renderCat();refresh();
