@@ -2,6 +2,8 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const r2=n=>Math.round((n+Number.EPSILON)*100)/100;
+const INCO=['EXW','FCA','FAS','FOB','CFR','CIF','CPT','CIP','DAP','DPU','DDP'];
+const isOrig=l=>l.k==='orig'||/^\s*cargos en origen\s*$/i.test(l.p||'');
 const TAX={'0.0% Z Export':0,'Exempt':0,'18% S':.18};
 const NOTES="TERMINOS Y CONDICIONES:\n- Reclamaciones por cargas no aseguradas no serán aceptadas, en caso de requerir asegurar su mercancía con nosotros debe notificar por correo, el costo del mismo para carga general es de USD 0.50 por cada USD 100.00 del Valor CIF + 10% (Min. USD 55.00).\n- Frecuencia de salidas semanal.\n- Tarifas aplicables al momento de la salida desde Puerto de Carga.\n- Roll overs y/o cancelaciones estarán sujetas a costos adicional.\n- Tarifas incluyen DTHC y cargos locales de la línea naviera en destino.\n- Tarifas no incluyen cargos por Overweight y/o Oversize.\n- Tarifas sujetas a cargos de inspección en origen y/o en puertos de Trasbordo.\n- Todos los cargos adicionales son VATOS (Valid At the Time Of Shipping).\n- Tarifas no incluyen ITBIS 18%.\n- Tarifas sujetas a disponibilidad de equipos y espacios.\n- No incluido DPH/PORTCOLLECT & DPW/HIT";
 const PRE={aduana:{p:'Gestion Aduanal de 1-4 Items',d:'Servicio incluye verificacion dos veces, declaracion y despacho de carga. Valido para 1-4 items Tarifa fija NO INCLUIDO SERV. VUCE.RD',r:600,t:'18% S'},terrestre:{p:'FLETE TERRESTRE',d:'DESDE: CAUCEDO\nHASTA: SDO',r:230,t:'Exempt'}};
@@ -62,7 +64,7 @@ function autoLines(){
   const diff=r2(total*ratio-acc),first=['freight','orig','dest'].find(k=>S[k]>0);V[first]=r2(V[first]+diff);
   const L=[];
   if(S.freight>0)L.push({p:'FLETE MARITIMO '+(m.type||''),d:[(m.origin&&m.dest)?m.origin+' a '+m.dest:'',[m.weight,m.vol].filter(Boolean).join(' · ')].filter(Boolean).join('\n'),q:1,r:V.freight,t:'0.0% Z Export'});
-  if(S.orig>0)L.push({p:'CARGOS EN ORIGEN',d:m.inco||'',q:1,r:V.orig,t:'Exempt'});
+  if(S.orig>0)L.push({p:'CARGOS EN ORIGEN',k:'orig',d:INCO.includes((m.inco||'').toUpperCase())?m.inco.toUpperCase():'EXW',q:1,r:V.orig,t:'Exempt'});
   if(S.dest>0)L.push({p:'CARGOS EN DESTINO',d:'Cargos de la linea naviera, INCLUIDO: FHC Freight Handling Charge, THC Destino, BL destino.',q:1,r:V.dest,t:'18% S'});
   return L;
 }
@@ -81,8 +83,9 @@ function startQuote(src,saved){
   $('#editor').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderLines(){
+  Q.lines.forEach(l=>{if(isOrig(l)&&!INCO.includes(l.d))l.d='EXW'});
   $('#lines').innerHTML=Q.lines.map((l,i)=>`<div class="line" style="animation-delay:${i*60}ms" data-i="${i}">
-    <div class="g2"><div><label>Producto o servicio</label><input data-k="p" value="${esc(l.p)}"></div><div><label>Descripción</label><textarea data-k="d" rows="2">${esc(l.d)}</textarea></div></div>
+    <div class="g2"><div><label>Producto o servicio</label><input data-k="p" value="${esc(l.p)}"></div><div>${isOrig(l)?`<label>INCOTERMS</label><select data-k="d">${INCO.map(o=>`<option${o===l.d?' selected':''}>${o}</option>`).join('')}</select>`:`<label>Descripción</label><textarea data-k="d" rows="2">${esc(l.d)}</textarea>`}</div></div>
     <div class="lr"><div><label>Impuesto</label><select data-k="t">${Object.keys(TAX).map(k=>`<option${k===l.t?' selected':''}>${k}</option>`).join('')}</select></div>
     <div><label>Cant.</label><input type="number" min="0" step="1" data-k="q" value="${l.q}"></div><div><label>Tarifa</label><input type="number" min="0" step="0.01" data-k="r" value="${l.r}"></div>
     <div><label>Importe</label><input disabled value="${fmt(l.q*l.r)}" data-amt></div><button class="x" data-del>Quitar</button></div></div>`).join('');
