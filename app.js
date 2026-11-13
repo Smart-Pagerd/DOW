@@ -84,7 +84,7 @@ function startQuote(src,saved){
 }
 function renderLines(){
   Q.lines.forEach(l=>{if(isOrig(l)&&!INCO.includes(l.d))l.d='EXW'});
-  $('#lines').innerHTML=Q.lines.map((l,i)=>`<div class="line" style="animation-delay:${i*60}ms" data-i="${i}">
+  $('#lines').innerHTML=Q.lines.map((l,i)=>`<div class="line" style="animation-delay:${i*60}ms" data-i="${i}"><div class="lh">Línea ${i+1}</div>
     <div class="g2"><div><label>Producto o servicio</label><input data-k="p" value="${esc(l.p)}"></div><div>${isOrig(l)?`<label>INCOTERMS</label><select data-k="d">${INCO.map(o=>`<option${o===l.d?' selected':''}>${o}</option>`).join('')}</select>`:`<label>Descripción</label><textarea data-k="d" rows="2">${esc(l.d)}</textarea>`}</div></div>
     <div class="lr"><div><label>Impuesto</label><select data-k="t">${Object.keys(TAX).map(k=>`<option${k===l.t?' selected':''}>${k}</option>`).join('')}</select></div>
     <div><label>Cant.</label><input type="number" min="0" step="1" data-k="q" value="${l.q}"></div><div><label>Tarifa</label><input type="number" min="0" step="0.01" data-k="r" value="${l.r}"></div>
@@ -127,7 +127,7 @@ async function handle(file){
     if(!lines.length)throw new Error('El PDF no tiene texto legible (¿es un escaneo?)');
     const src=parseQuote(lines);st[1].className='st done';st[2].classList.add('act');await wait(450);
     if(!src.items.length)throw new Error('No pude identificar los cargos en este PDF. Puedes crear la cotización manualmente.');
-    st[2].className='st done';startQuote(src);toast('Revisa los datos antes de descargar');
+    st[2].className='st done';startQuote(src);setTimeout(()=>$('#steps').classList.remove('on'),1500);toast('Revisa los datos antes de descargar');
   }catch(e){toast(e.message||'No pude leer el PDF');st.forEach(s=>s.className='st')}
   busy=false;
 }
