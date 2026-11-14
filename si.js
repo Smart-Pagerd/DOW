@@ -27,56 +27,96 @@ function siGet(o,p){return p.split('.').reduce((a,k)=>a==null?'':a[k],o)}
 function siSet(o,p,v){const k=p.split('.');let a=o;while(k.length>1)a=a[k.shift()];a[k[0]]=v}
 
 /* ---- lectura del packing list (grid = filas de celdas) ---- */
+function siSplitHead(t){
+  let L=t.split(/\n/).map(x=>x.trim()).filter(Boolean);
+  if(L.length<2){
+    const s=t.replace(/\s+/g,' ').trim(),tel=s.search(/\bTEL\b/i);
+    const body=tel>0?s.slice(0,tel).trim():s,rest=tel>0?s.slice(tel):'';
+    const m=body.match(/^(.*?\b(?:CO\.?,?\s*LTD\.?|LIMITED|LTD\.?|INC\.?|CORP\.?|CORPORATION|COMPANY|FACTORY|GMBH)\.?)\s*(.*)$/i);
+    L=(m?[m[1].trim(),m[2].trim(),rest]:[body,rest]).filter(Boolean);
+  }
+  return L;
+}
 function siParse(grid){
   const cells=[];
   grid.forEach((row,r)=>(row||[]).forEach((v,c)=>{if(v!==undefined&&v!==null&&String(v).trim()!=='')cells.push({r,c,v})}));
-  const T=c=>String(c.v),find=re=>cells.find(c=>re.test(T(c).trim()));
-  const right=c=>cells.filter(x=>x.r===c.r&&x.c>c.c).sort((a,b)=>a.c-b.c)[0];
+  const T=c=>String(c.v),first=re=>cells.find(c=>re.test(T(c).trim()));
+  const rightOf=c=>cells.filter(x=>x.r===c.r&&x.c>c.c).sort((a,b)=>a.c-b.c)[0];
   const num=v=>{if(typeof v==='number')return v;const n=parseFloat(String(v).replace(/,/g,''));return isNaN(n)?null:n};
-  const out={shipper:{},cnee:{},ship:{},cargo:{}};
-  const head=cells.filter(c=>c.r<4).find(c=>T(c).includes('\n'))||cells.find(c=>c.r<3);
+  /* valor de una etiqueta: lo que sigue en la misma celda o, si no hay, la celda de la derecha */
+  const val=re=>{
+    const c=first(re);if(!c)return '';
+    const t=T(c).trim(),m=t.match(re),same=t.slice(m.index+m[0].length).replace(/^[\s:：\-]+/,'').trim();
+    if(same)return same;
+    const r=rightOf(c),v=r?T(r).trim():'';
+    return /[:：]\s*$/.test(v)?'':v;
+  };
+  const out={shipper:{},cnee:{},ship:{},cargo:{},found:{}};
+  /* embarcador */
+  const pool=cells.filter(c=>c.r<5);
+  const notLabel=c=>!/^(?:ADD(?:RESS)?|TO|FROM|CONSIGNEE|INV|DATE)\b/i.test(T(c).trim());
+  const head=pool.find(c=>notLabel(c)&&/\bTEL\s*[:：]/i.test(T(c)))||pool.find(c=>notLabel(c)&&T(c).includes('\n'))||pool.find(c=>notLabel(c)&&/\bLTD\b|CO\.,/i.test(T(c)))||cells.find(c=>c.r<3&&notLabel(c));
   if(head){
-    const L=T(head).split(/\n/).map(s=>s.trim()).filter(Boolean);
-    out.shipper.name=L[0]||'';out.shipper.address=L[1]||'';
-    const rest=L.slice(2).join(' ');
+    const L=siSplitHead(T(head)),rest=L.slice(2).join(' ');
+    out.shipper.name=(L[0]||'').replace(/^(FROM|SHIPPER)\s*[:：]\s*/i,'');out.shipper.address=L[1]||'';
     const t=rest.match(/TEL\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);if(t)out.shipper.phone=t[1].trim();
     const k=rest.match(/CONTACT\s*[:：]?\s*(.+)$/i);if(k)out.shipper.contact=k[1].trim();
+    const em=rest.match(/[\w.+-]+@[\w-]+\.[\w.]+/);if(em)out.shipper.email=em[0];
   }
-  const fr=find(/^FROM\s*[:：]/i);if(fr&&!out.shipper.name)out.shipper.name=T(fr).replace(/^FROM\s*[:：]\s*/i,'').trim();
-  const to=find(/^TO\s*[:：]/i);if(to)out.cnee.name=T(to).replace(/^TO\s*[:：]\s*/i,'').split(/\n/)[0].trim();
-  const ad=find(/^ADD(RESS)?\s*[:：]/i);
-  if(ad){
-    const raw=T(ad).replace(/^ADD(RESS)?\s*[:：]\s*/i,''),L=raw.split(/\n/).map(s=>s.trim()).filter(Boolean);
-    out.cnee.address=L[0]||'';
-    const rest=L.slice(1).join(' ')||raw;
+  if(!out.shipper.name){const f=val(/^(?:FROM|SHIPPER|EXPORTER)\s*[:：]/i);if(f)out.shipper.name=f.split(/\n/)[0].trim()}
+  /* consignatario */
+  const toRaw=val(/^(?:TO|CONSIGNEE|SHIP\s*TO|SOLD\s*TO|BUYER)\s*[:：]/i)||val(/^CONSIGNEE\b/i);
+  if(toRaw){const L=toRaw.split(/\n/).map(x=>x.trim()).filter(Boolean);out.cnee.name=L[0]||'';if(L[1])out.cnee.address=L[1]}
+  const adRaw=val(/^ADD(?:RESS)?\s*[:：]/i);
+  if(adRaw){
+    const L=adRaw.split(/\n/).map(x=>x.trim()).filter(Boolean);let addr=L[0]||'',rest=L.slice(1).join(' ');
+    const ci=addr.search(/\s+Contacts?\s*[:：]/i);if(ci>0){rest=(addr.slice(ci)+' '+rest).trim();addr=addr.slice(0,ci).trim()}
+    out.cnee.address=addr||out.cnee.address||'';if(!rest)rest=adRaw;
     const m=rest.match(/Contacts?\s*[:：]\s*(.*?)\s+Tel\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);
     if(m){out.cnee.contact=m[1].trim();out.cnee.phone=m[2].trim()}
+    else{const t=rest.match(/Tel\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);if(t)out.cnee.phone=t[1].trim()}
     const em=rest.match(/[\w.+-]+@[\w-]+\.[\w.]+/);if(em)out.cnee.email=em[0];
   }
-  const inv=find(/^INV\.?\s*NO/i);if(inv){const r=right(inv);if(r)out.po=T(r).trim()}
-  const pol=find(/^Ports?\s+of\s+loading/i);if(pol){const r=right(pol);if(r)out.ship.pol=T(r).trim()}
-  const pod=find(/^Ports?\s+of\s+discharge/i);if(pod){const r=right(pod);if(r)out.ship.pod=T(r).trim()}
-  const tot=re=>{const c=find(re);if(!c)return null;const r=cells.filter(x=>x.r===c.r&&x.c>c.c&&num(x.v)!==null).sort((a,b)=>a.c-b.c)[0];return r?num(r.v):null};
-  let ct=tot(/^(TTL|TOTAL)\s+(CTNS|PACKAGES|PKGS)/i),gw=tot(/^(TTL|TOTAL)\s+G\.?\s*W/i),cb=tot(/^(TTL|TOTAL)\s+CBM/i);
+  /* embarque */
+  const po=val(/^INV(?:OICE)?\.?\s*NO\.?\s*[:：]?/i);if(po)out.po=po;
+  const pol=val(/^(?:Ports?\s+of\s+loading|Loading\s+Port|Port\s+of\s+Shipment|POL)\s*[:：]?/i);if(pol)out.ship.pol=pol;
+  const pod=val(/^(?:Ports?\s+of\s+(?:discharge|destination)|Discharge\s+Port|Destination\s+Port|POD)\s*[:：]?/i);if(pod)out.ship.pod=pod;
+  /* totales */
+  const tot=re=>{
+    const c=first(re);if(!c)return null;
+    const t=T(c).trim(),m=t.match(re),mm=t.slice(m.index+m[0].length).match(/-?\d[\d,]*\.?\d*/);
+    if(mm)return num(mm[0]);
+    const r=cells.filter(x=>x.r===c.r&&x.c>c.c&&num(x.v)!==null).sort((a,b)=>a.c-b.c)[0];
+    return r?num(r.v):null;
+  };
+  let ct=tot(/^(?:TTL|TOTAL)\.?\s*(?:CTNS|CARTONS?|PKGS?|PACKAGES?|BULTOS)\b\s*[:：]?/i);
+  let gw=tot(/^(?:TTL|TOTAL)\.?\s*(?:G\.?\s*W\.?|GROSS(?:\s*WEIGHT)?)\b\s*[:：]?/i);if(gw==null)gw=tot(/^GROSS\s*WEIGHT\s*[:：]?/i);
+  let cb=tot(/^(?:TTL|TOTAL)\.?\s*(?:CBM|VOLUME|MEASUREMENT|M3)\b\s*[:：]?/i);if(cb==null)cb=tot(/^CBM\s*[:：]/i);
   /* tabla de artículos: descripción y respaldo de totales */
-  const hdr=cells.find(c=>/^DES\.?$/i.test(T(c).trim()));
+  const hdr=first(/^(?:DES\.?|DESCRIPTION(?:\s+OF\s+GOODS)?|ITEM\s+DESCRIPTION|DESCRIPCI[ÓO]N)$/i);
   const descs=[];
   if(hdr){
     const col=n=>{const c=cells.find(x=>x.r===hdr.r&&n.test(T(x).trim()));return c?c.c:-1};
-    const cD=hdr.c,cE=col(/^(CNTS|CTNS)$/i),cG=col(/^G\.?W/i),cS=col(/CTNS?\s*SIZE/i),cC=col(/^CBM/i);
+    const cD=hdr.c,cE=col(/^(?:CNTS|CTNS|CARTONS?|PKGS?)$/i),cG=col(/^G\.?\s*W/i),cS=col(/CTNS?\s*SIZE|CARTON\s*SIZE|MEAS/i);
     let sc=0,sg=0,sv=0,n=0;
     for(let r=hdr.r+1;r<grid.length;r++){
-      const g=(grid[r]||[]),at=c=>(c>=0?g[c]:null);
-      if(g.some(v=>/^(MARK|TTL|TOTAL)/i.test(String(v==null?'':v).trim())))break;
+      const g=grid[r]||[],at=c=>(c>=0?g[c]:null);
+      if(g.some(v=>/^(?:MARK|TTL|TOTAL)/i.test(String(v==null?'':v).trim())))break;
       const d=at(cD);if(d&&String(d).trim())descs.push(String(d).replace(/\(.*?\)/g,'').replace(/\s+/g,' ').trim().toUpperCase());
-      const e=num(at(cE));if(e!==null){sc+=e;n++;const gg=num(at(cG));if(gg!==null)sg+=gg*e;
+      const e=num(at(cE));
+      if(e!==null){sc+=e;n++;const gg=num(at(cG));if(gg!==null)sg+=gg*e;
         const a=num(at(cS)),b=num(at(cS+1)),c=num(at(cS+2));if(a&&b&&c)sv+=a*b*c*e/1e6}
     }
-    if(n){if(ct==null)ct=sc;if(gw==null)gw=sg;if(cb==null)cb=sv}
+    if(n){if(ct==null)ct=sc;if(gw==null)gw=sg;if(cb==null&&sv)cb=sv}
   }
   const r2=x=>x==null?'':Math.round(x*100)/100;
   out.cargo.pieces=ct==null?'':ct;out.cargo.gw=r2(gw);out.cargo.cbm=r2(cb);
-  out.cargo.desc=[...new Set(descs)].slice(0,3).join(' / ');
+  out.cargo.desc=[...new Set(descs)].filter(Boolean).slice(0,3).join(' / ');
+  out.found={
+    'Embarcador':out.shipper.name,'Dirección del embarcador':out.shipper.address,
+    'Consignatario (CNEE)':out.cnee.name,'Dirección del consignatario':out.cnee.address,
+    'Puerto de carga (POL)':out.ship.pol,'Total de bultos':out.cargo.pieces,
+    'Peso bruto':out.cargo.gw,'Volumen (CBM)':out.cargo.cbm,'Descripción de la mercancía':out.cargo.desc};
   return out;
 }
 function siMatch(name,list){
@@ -235,6 +275,11 @@ function siRender(){
   $('#siClient').value=S.client||'';
   document.querySelectorAll('#siSvc button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.svc));
 }
+function siReport(p){
+  const f=p&&p.found;if(!f){$('#siFound').innerHTML='';return}
+  const k=Object.keys(f),ok=k.filter(x=>f[x]!==''&&f[x]!=null).length;
+  $('#siFound').innerHTML=`<div class="card found"><h3>Datos leídos del Packing List (${ok} de ${k.length})</h3><ul>${k.map(x=>{const v=f[x];const y=v!==''&&v!=null;return `<li class="${y?'y':'n'}"><b>${y?'✔':'✘'} ${esc(x)}</b><span>${y?esc(String(v).slice(0,90)):'No encontrado, llénalo a mano'}</span></li>`}).join('')}</ul></div>`;
+}
 function siStart(p,fromBlank){
   S=siBlank();siEditId=null;S.date=today();
   if(p){
@@ -243,10 +288,11 @@ function siStart(p,fromBlank){
     Object.assign(S.cargo,p.cargo);
     const m=siMatch(S.cnee.name,siClients);if(m){S.client=m.id;S.cnee.name=m.name;S.cnee.rnc=m.rnc||''}
   }
-  $('#siEditor').classList.add('on');siRender();
+  $('#siEditor').classList.add('on');siRender();siReport(p);
   $('#siEditor').scrollIntoView({behavior:'smooth',block:'start'});
 }
 async function siGrid(file){
+  if(typeof XLSX==='undefined')throw new Error('No cargó la librería de Excel. Revisa tu conexión o desactiva el bloqueador y recarga.');
   const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
   let name=wb.SheetNames.find(n=>/pack/i.test(n))||wb.SheetNames[0];
   return XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:null,blankrows:true});
@@ -260,9 +306,10 @@ async function siHandle(file){
   try{
     const grid=await siGrid(file);st[0].className='st done';st[1].classList.add('act');await siWait(350);
     const p=siParse(grid);
-    if(!p.cargo.pieces&&!p.shipper.name&&!p.cnee.name)throw new Error('No encontré datos de packing list en este archivo');
+    console.log('[SI] filas leídas:',grid.length,'datos:',p.found);
+    const none=Object.values(p.found).every(v=>v===''||v==null);
     st[1].className='st done';st[2].classList.add('act');await siWait(350);
-    st[2].className='st done';siStart(p);toast('Revisa los datos y elige LCL o FCL');
+    st[2].className='st done';siStart(p);toast(none?'No reconocí los campos de este archivo; llénalos a mano':'Revisa los datos y elige LCL o FCL');
     setTimeout(()=>$('#siSteps').classList.remove('on'),1500);
   }catch(e){console.error(e);toast(e.message||'No pude leer el archivo');st.forEach(s=>s.className='st')}
   siBusy=false;
@@ -343,7 +390,7 @@ function siBind(){
   ['dragleave','drop'].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.remove('over')}));
   d.addEventListener('drop',e=>{if(e.dataTransfer.files[0])siHandle(e.dataTransfer.files[0])});
   f.onchange=()=>{if(f.files[0])siHandle(f.files[0]);f.value=''};
-  $('#siBlank').onclick=()=>siStart(null);
+  $('#siBlank').onclick=()=>{siStart(null);siReport(null)};
   $('#siList').addEventListener('click',async e=>{
     const b=e.target.closest('[data-a]');if(!b)return;
     const r=siCat.find(x=>x.id===b.closest('.item').dataset.id);if(!r)return;
