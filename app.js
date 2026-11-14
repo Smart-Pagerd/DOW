@@ -12,8 +12,8 @@ let Q=null,editId=null,catalog=[],busy=false;
 /* ---------- UI helpers ---------- */
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),3200)}
 function count(el,to){const from=parseFloat(el.dataset.v||0);el.dataset.v=to;if(matchMedia('(prefers-reduced-motion:reduce)').matches){el.textContent=fmt(to);return}const t0=performance.now();(function s(t){const k=Math.min(1,(t-t0)/600),e=1-Math.pow(1-k,3);el.textContent=fmt(from+(to-from)*e);if(k<1)requestAnimationFrame(s)})(t0)}
-function tab(n){$('#vNew').style.display=n?'none':'';$('#vCat').classList.toggle('on',!!n);$('#tNew').classList.toggle('on',!n);$('#tCat').classList.toggle('on',!!n)}
-$('#tNew').onclick=()=>tab(0);$('#tCat').onclick=()=>{tab(1);refresh()};
+function tab(n){$('#vNew').style.display=n===0?'':'none';$('#vCat').classList.toggle('on',n===1);$('#vSI').classList.toggle('on',n===2);$('#tNew').classList.toggle('on',n===0);$('#tCat').classList.toggle('on',n===1);$('#tSI').classList.toggle('on',n===2)}
+$('#tNew').onclick=()=>tab(0);$('#tCat').onclick=()=>{tab(1);refresh()};$('#tSI').onclick=()=>{tab(2);siOpen()};
 
 /* ---------- PDF reading ---------- */
 async function readPdf(file){

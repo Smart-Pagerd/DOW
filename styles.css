@@ -57,3 +57,17 @@ input:disabled{background:var(--orl);color:var(--tx);opacity:1}textarea{resize:v
 .toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translate(-50%,10px);background:var(--tx);color:#fff;padding:10px 18px;border-radius:6px;border:1.5px solid var(--or);opacity:0;transition:.25s;z-index:9;pointer-events:none;max-width:92vw;text-align:center}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Shipping Instruction */
+#siEditor{display:none;grid-template-columns:1fr 300px;gap:18px;align-items:start;margin-top:18px}#siEditor.on{display:grid}
+#siEditor #siForm .card{margin-bottom:14px}
+@media(max-width:900px){#siEditor.on{grid-template-columns:1fr}}
+.si .wide{grid-column:1/-1}
+.cl{display:flex;gap:8px}.cl select{flex:1}
+.seg{display:flex;gap:8px}
+.seg button{flex:1;padding:12px;border:1.5px solid var(--or);border-radius:6px;background:#fff;color:var(--tx);font:700 16px inherit;cursor:pointer;transition:.15s}
+.seg button:hover{background:var(--orl)}.seg button.on{background:var(--bl);border-color:var(--bl);color:#fff}
+.seg.err{animation:sh .35s}.seg.err button{border-color:#b42318;background:#fff3f1}
+@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.hint{display:block;margin-top:8px;color:var(--mu);font-size:12px}
+.side .btn{width:100%}

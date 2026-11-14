@@ -16,6 +16,8 @@ Página estática (HTML + CSS + JavaScript, sin frameworks ni build).
 - `index.html`: estructura
 - `styles.css`: estilos
 - `app.js`: lectura del PDF, cálculo de precio, generación del PDF y catálogo
+- `si.js` / `si-assets.js`: Shipping Instruction (lógica, logo y plantilla de Excel)
+- `supabase-shipping.sql`: tablas `clientes` y `shipping_instructions`
 - `config.js`: URL y clave pública de Supabase
 - `logo.js` / `logo.png`: logo de DOWIE
 
@@ -28,6 +30,16 @@ Si `SUPABASE_KEY` sigue con el texto de ejemplo, la página guarda solo en el
 navegador (`localStorage`). **Exportar** / **Importar** genera y carga un `.json`.
 
 Nunca poner la clave `service_role` en estos archivos.
+
+## Shipping Instruction
+Pestaña nueva: se sube el Packing List (.xlsx, .xls, .ods o .csv) y se genera
+el Shipping Instruction en **PDF** o **Excel** (la plantilla de Excel va
+incrustada en `si-assets.js`, por eso el archivo sale idéntico).
+- Hay que elegir **LCL o FCL** antes de descargar.
+- El CNEE se puede elegir de la lista de clientes (rellena nombre y RNC) o dejarlo personalizado.
+- Notify party viene prellenado con los datos de DOWIE.
+- Los clientes y el historial se guardan en Supabase: ejecutar `supabase-shipping.sql` una vez.
+- Para agregar un cliente fijo: editar `SI_CLIENTS` en `si.js` o usar el botón «Guardar como cliente».
 
 ## Ajustar el precio
 La función `ratioFor` en `app.js` define cuánto se reduce el monto original
