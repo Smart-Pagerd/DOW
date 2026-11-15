@@ -109,6 +109,16 @@ function siParse(grid){
     }
     if(n){if(ct==null)ct=sc;if(gw==null)gw=sg;if(cb==null&&sv)cb=sv}
   }
+  /* respaldo: buscar en todo el texto del documento si algo no se encontró por celdas */
+  const blob=cells.map(c=>T(c)).join('\n'),grab=(re,g=1)=>{const m=blob.match(re);return m?m[g].trim():''},NUM='\\s*[:：]?\\s*(-?\\d[\\d,]*\\.?\\d*)';
+  if(!out.cnee.name)out.cnee.name=grab(/(?:^|\n)\s*(?:TO|CONSIGNEE|SHIP\s*TO|SOLD\s*TO)\s*[:：]\s*([^\n]+)/i);
+  if(!out.cnee.address){const ad=grab(/(?:^|\n)\s*ADD(?:RESS)?\s*[:：]\s*([^\n]+)/i);out.cnee.address=ad.replace(/\s+Contacts?\s*[:：].*$/i,'').trim()}
+  if(!out.cnee.contact){const m=blob.match(/Contacts?\s*[:：]\s*(.*?)\s+Tel\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);if(m){out.cnee.contact=m[1].trim();out.cnee.phone=m[2].trim()}}
+  if(!out.shipper.name)out.shipper.name=grab(/^\s*([^\n]*(?:CO\.?,?\s*LTD|LIMITED|\bLTD\b|\bINC\b|\bCORP\b|S\.?A\.?)[^\n]*)/im);
+  if(!out.ship.pol)out.ship.pol=grab(/Ports?\s+of\s+loading\s*[:：]?\s*([^\n:：]+)/i);
+  if(ct==null){const v=grab(new RegExp('(?:TTL|TOTAL)\\s*(?:CTNS|CARTONS?|PKGS?|PACKAGES?)'+NUM,'i'));if(v)ct=num(v)}
+  if(gw==null){const v=grab(new RegExp('(?:TTL|TOTAL)\\s*(?:G\\.?\\s*W\\.?|GROSS(?:\\s*WEIGHT)?)'+NUM,'i'));if(v)gw=num(v)}
+  if(cb==null){const v=grab(new RegExp('(?:TTL|TOTAL)\\s*(?:CBM|VOLUME|MEASUREMENT|M3)'+NUM,'i'));if(v)cb=num(v)}
   const r2=x=>x==null?'':Math.round(x*100)/100;
   out.cargo.pieces=ct==null?'':ct;out.cargo.gw=r2(gw);out.cargo.cbm=r2(cb);
   out.cargo.desc=[...new Set(descs)].filter(Boolean).slice(0,3).join(' / ');
@@ -193,6 +203,46 @@ const SI_ST={
  S:{f:'082B5A',c:'FFFFFF',s:9,b:1,a:'l'},L:{f:'EAF2FB',c:'082B5A',s:8,b:1,a:'l'},
  N:{f:'EAF2FB',c:'5B6B7F',s:7,b:0,a:'l'},G:{f:'FFFFFF',c:'082B5A',s:8,b:1,a:'c'},
  F:{f:'082B5A',c:'FFFFFF',s:8,b:1,a:'c',nb:1},V:{f:'FFF7E6',c:'152238',s:9,b:0,a:'c'}};
+
+/* ---- lector propio de .ods (content.xml) ---- */
+function siOdsParse(xml){
+  const dec=t=>t.replace(/&#x([0-9a-f]+);/gi,(m,h)=>String.fromCodePoint(parseInt(h,16))).replace(/&#(\d+);/g,(m,d)=>String.fromCodePoint(+d)).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+  const attr=(a,n)=>{const m=a.match(new RegExp('(?:^|\\s)'+n+'="([^"]*)"'));return m?dec(m[1]):null};
+  const para=inner=>{
+    const out=[],re=/<text:p(?=[\s>\/])[^>]*?(?:\/>|>([\s\S]*?)<\/text:p>)/g;let m;
+    while((m=re.exec(inner))){
+      let t=m[1]||'';
+      t=t.replace(/<text:s(?:\s[^>]*?text:c="(\d+)")?[^>]*\/>/g,(x,n)=>' '.repeat(n?+n:1)).replace(/<text:line-break\s*\/>/g,'\n').replace(/<text:tab\s*\/>/g,' ').replace(/<[^>]+>/g,'');
+      out.push(dec(t));
+    }
+    return out.join('\n');
+  };
+  const sheets=[],tre=/<table:table\s([^>]*)>([\s\S]*?)<\/table:table>/g;let tm;
+  while((tm=tre.exec(xml))){
+    const name=attr(tm[1],'table:name')||'',grid=[];let r=0;
+    const rre=/<table:table-row(?=[\s>\/])([^>]*?)(?:\/>|>([\s\S]*?)<\/table:table-row>)/g;let rm;
+    while((rm=rre.exec(tm[2]))){
+      const rep=+(attr(rm[1],'table:number-rows-repeated')||1),body=rm[2]||'';let c=0,has=false;const row=[];
+      const cre=/<(table:table-cell|table:covered-table-cell)(?=[\s>\/])([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g;let cm;
+      while((cm=cre.exec(body))){
+        const crep=+(attr(cm[2],'table:number-columns-repeated')||1);
+        if(cm[1]==='table:table-cell'){
+          const vt=attr(cm[2],'office:value-type');let v=null;
+          if(vt==='float'||vt==='percentage'||vt==='currency'){const x=attr(cm[2],'office:value');if(x!==null)v=parseFloat(x)}
+          else if(vt==='string'){v=attr(cm[2],'office:string-value');if(v===null)v=para(cm[3]||'')}
+          else if(vt==='date'){v=attr(cm[2],'office:date-value')}
+          else if(vt==='boolean'){v=attr(cm[2],'office:boolean-value')}
+          if(v!==null&&String(v).trim()!==''){for(let k=0;k<Math.min(crep,20);k++)row[c+k]=v;has=true}
+        }
+        c+=crep;
+      }
+      if(has)grid[r]=row;
+      r+=rep;
+    }
+    sheets.push({name,grid});
+  }
+  return sheets;
+}
 /*__PURE_END__*/
 
 function siPdf(S){
@@ -275,11 +325,6 @@ function siRender(){
   $('#siClient').value=S.client||'';
   document.querySelectorAll('#siSvc button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.svc));
 }
-function siReport(p){
-  const f=p&&p.found;if(!f){$('#siFound').innerHTML='';return}
-  const k=Object.keys(f),ok=k.filter(x=>f[x]!==''&&f[x]!=null).length;
-  $('#siFound').innerHTML=`<div class="card found"><h3>Datos leídos del Packing List (${ok} de ${k.length})</h3><ul>${k.map(x=>{const v=f[x];const y=v!==''&&v!=null;return `<li class="${y?'y':'n'}"><b>${y?'✔':'✘'} ${esc(x)}</b><span>${y?esc(String(v).slice(0,90)):'No encontrado, llénalo a mano'}</span></li>`}).join('')}</ul></div>`;
-}
 function siStart(p,fromBlank){
   S=siBlank();siEditId=null;S.date=today();
   if(p){
@@ -288,14 +333,35 @@ function siStart(p,fromBlank){
     Object.assign(S.cargo,p.cargo);
     const m=siMatch(S.cnee.name,siClients);if(m){S.client=m.id;S.cnee.name=m.name;S.cnee.rnc=m.rnc||''}
   }
-  $('#siEditor').classList.add('on');siRender();siReport(p);
+  $('#siEditor').classList.add('on');siRender();
   $('#siEditor').scrollIntoView({behavior:'smooth',block:'start'});
 }
 async function siGrid(file){
-  if(typeof XLSX==='undefined')throw new Error('No cargó la librería de Excel. Revisa tu conexión o desactiva el bloqueador y recarga.');
-  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
-  let name=wb.SheetNames.find(n=>/pack/i.test(n))||wb.SheetNames[0];
-  return XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,raw:true,defval:null,blankrows:true});
+  const buf=await file.arrayBuffer();let sheets=[];
+  if(/\.ods$/i.test(file.name)&&typeof JSZip!=='undefined'){
+    try{const z=await JSZip.loadAsync(buf);sheets=siOdsParse(await z.file('content.xml').async('string'))}catch(e){console.warn('ODS propio falló',e);sheets=[]}
+  }
+  if(!sheets.some(x=>x.grid.length)){
+    if(typeof XLSX==='undefined')throw new Error('No cargó la librería de Excel. Revisa tu conexión o desactiva el bloqueador y recarga.');
+    const wb=XLSX.read(buf,{type:'array'});
+    sheets=wb.SheetNames.map(n=>{
+      const ws=wb.Sheets[n],g=[];
+      Object.keys(ws).forEach(k=>{
+        if(k[0]==='!')return;
+        const c=ws[k],v=c.v!==undefined?c.v:c.w;
+        if(v===undefined||v===null||String(v).trim()==='')return;
+        const a=XLSX.utils.decode_cell(k);(g[a.r]=g[a.r]||[])[a.c]=v;
+      });
+      return{name:n,grid:g};
+    });
+  }
+  let best=[],bs=-1;
+  sheets.forEach(sh=>{
+    let sc=/pack/i.test(sh.name)?5:0;
+    sh.grid.forEach(r=>(r||[]).forEach(v=>{if(/packing|ctns|g\.?\s*w|cbm|consignee|^to\s*[:：]/i.test(String(v)))sc++}));
+    if(sc>bs){bs=sc;best=sh.grid}
+  });
+  return best;
 }
 const siWait=ms=>new Promise(r=>setTimeout(r,ms));
 async function siHandle(file){
@@ -390,7 +456,7 @@ function siBind(){
   ['dragleave','drop'].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.remove('over')}));
   d.addEventListener('drop',e=>{if(e.dataTransfer.files[0])siHandle(e.dataTransfer.files[0])});
   f.onchange=()=>{if(f.files[0])siHandle(f.files[0]);f.value=''};
-  $('#siBlank').onclick=()=>{siStart(null);siReport(null)};
+  $('#siBlank').onclick=()=>siStart(null);
   $('#siList').addEventListener('click',async e=>{
     const b=e.target.closest('[data-a]');if(!b)return;
     const r=siCat.find(x=>x.id===b.closest('.item').dataset.id);if(!r)return;
