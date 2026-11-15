@@ -76,3 +76,4 @@ input:disabled{background:var(--orl);color:var(--tx);opacity:1}textarea{resize:v
 .found li{display:flex;flex-direction:column;font-size:13px}.found li span{color:var(--mu);word-break:break-word}
 .found li.y b{color:var(--ok)}.found li.n b{color:#b42318}
 #siFound .card{margin-bottom:14px}
+.draft{justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;background:var(--orl)}

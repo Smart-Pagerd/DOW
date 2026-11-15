@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DOWIE · Cotizaciones</title>
 <link rel="icon" type="image/png" href="favicon.png">
-<link rel="stylesheet" href="styles.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 <div class="wrap">
@@ -19,6 +17,7 @@
 <section id="vNew">
   <h1>Nueva cotización</h1>
   <p class="sub">Sube la cotización del proveedor (Neutral Logistics o Pier 17) para generar la de DOWIE.</p>
+  <div class="card draft" id="draftBar" style="display:none"></div>
   <div class="card" id="upCard">
     <div class="drop" id="drop"><b>Arrastra el PDF aquí o haz clic para seleccionarlo</b><small>Solo archivos .pdf</small></div>
     <input type="file" id="file" accept="application/pdf" hidden>
@@ -31,6 +30,7 @@
       <div class="card" style="margin-bottom:14px">
         <h3>Datos de la cotización</h3>
         <div class="g3"><div><label>N.º de cotización</label><input id="fNum"></div><div><label>Fecha</label><input type="date" id="fDate"></div><div><label>Vencimiento</label><input type="date" id="fDue"></div></div>
+        <div style="margin-top:10px"><label>Cliente</label><select id="ctClient"></select></div>
         <div class="g2" style="margin-top:10px"><div><label>Facturar a</label><textarea id="fBill" rows="2"></textarea></div><div><label>Enviar a</label><textarea id="fShip" rows="2"></textarea></div></div>
       </div>
       <div class="card" style="margin-bottom:14px">
@@ -90,13 +90,9 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="logo.js"></script>
-<script src="si-assets.js"></script>
-<script src="config.js"></script>
-<script src="app.js"></script>
-<script src="si.js"></script>
+<script src="logo.js?v=4"></script>
+<script src="config.js?v=4"></script>
+<script src="app.js?v=4"></script>
+<script src="si.js?v=4"></script>
 </body>
 </html>

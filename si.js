@@ -280,6 +280,7 @@ function siPdf(S){
 const siB64=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u.buffer};
 function siSave(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
 async function siXlsx(S,name){
+  await need('exceljs');await need('siassets');
   const wb=new ExcelJS.Workbook();await wb.xlsx.load(siB64(SI_TEMPLATE));
   const ws=wb.getWorksheet('MARITIMA'),air=wb.getWorksheet('AEREA');if(air)wb.removeWorksheet(air.id);
   ['K16','K22','E33'].forEach(a=>{ws.getCell(a).value=null});
@@ -338,11 +339,11 @@ function siStart(p,fromBlank){
 }
 async function siGrid(file){
   const buf=await file.arrayBuffer();let sheets=[];
-  if(/\.ods$/i.test(file.name)&&typeof JSZip!=='undefined'){
-    try{const z=await JSZip.loadAsync(buf);sheets=siOdsParse(await z.file('content.xml').async('string'))}catch(e){console.warn('ODS propio falló',e);sheets=[]}
+  if(/\.ods$/i.test(file.name)){
+    try{await need('jszip');const z=await JSZip.loadAsync(buf);sheets=siOdsParse(await z.file('content.xml').async('string'))}catch(e){console.warn('ODS propio falló',e);sheets=[]}
   }
   if(!sheets.some(x=>x.grid.length)){
-    if(typeof XLSX==='undefined')throw new Error('No cargó la librería de Excel. Revisa tu conexión o desactiva el bloqueador y recarga.');
+    await need('xlsx');
     const wb=XLSX.read(buf,{type:'array'});
     sheets=wb.SheetNames.map(n=>{
       const ws=wb.Sheets[n],g=[];
@@ -372,7 +373,6 @@ async function siHandle(file){
   try{
     const grid=await siGrid(file);st[0].className='st done';st[1].classList.add('act');await siWait(350);
     const p=siParse(grid);
-    console.log('[SI] filas leídas:',grid.length,'datos:',p.found);
     const none=Object.values(p.found).every(v=>v===''||v==null);
     st[1].className='st done';st[2].classList.add('act');await siWait(350);
     st[2].className='st done';siStart(p);toast(none?'No reconocí los campos de este archivo; llénalos a mano':'Revisa los datos y elige LCL o FCL');
@@ -382,8 +382,8 @@ async function siHandle(file){
 }
 const siOk=()=>{if(S.svc)return true;toast('Selecciona si es LCL o FCL');$('#siSvc').classList.add('err');$('#siSvc').scrollIntoView({behavior:'smooth',block:'center'});return false};
 const siName=(d,ext)=>'Shipping_Instruction_'+((d.cnee&&d.cnee.name)||'DOWIE').replace(/[^\w]+/g,'_')+'.'+ext;
-function siDoPdf(d){try{siPdf(d).save(siName(d,'pdf'));toast('PDF descargado')}catch(e){console.error(e);toast('No se pudo generar el PDF')}}
-async function siDoXls(d){try{await siXlsx(d,siName(d,'xlsx'));toast('Excel descargado')}catch(e){console.error(e);toast('No se pudo generar el Excel')}}
+async function siDoPdf(d){try{await need('jspdf');await need('siassets');siPdf(d).save(siName(d,'pdf'));toast('PDF descargado')}catch(e){console.error(e);toast(e.message||'No se pudo generar el PDF')}}
+async function siDoXls(d){try{await siXlsx(d,siName(d,'xlsx'));toast('Excel descargado')}catch(e){console.error(e);toast(e.message||'No se pudo generar el Excel')}}
 
 /* ---- almacenamiento (Supabase o navegador) ---- */
 const SI_LS='dowie_si',SI_LSC='dowie_clientes';
@@ -398,8 +398,6 @@ async function siLoad(){
   siCat=siLsGet(SI_LS);siList();
   if(!REMOTE){siRender();return}
   try{
-    const cl=await siFetch('clientes','?select=*&order=name.asc');
-    if(cl.length){siClients=SI_CLIENTS.filter(s=>!cl.some(c=>c.id===s.id)).concat(cl.map(c=>({id:c.id,name:c.name,rnc:c.rnc||''})))}
     const rows=await siFetch('shipping_instructions','?select=*&order=created_at.desc');
     siCat=rows.map(r=>({id:r.id,ref:r.ref,consignee:r.consignee,date:r.date,svc:r.svc,data:r.data,createdAt:Number(r.created_at)||0}));
     siLsSet(SI_LS,siCat);siList();siRender();
@@ -426,7 +424,7 @@ async function siSaveClient(){
     if(REMOTE)await siUpsert('clientes',{id:c.id,name:c.name,rnc:c.rnc,created_at:Date.now()});
     const i=siClients.findIndex(x=>x.id===id);if(i>=0)siClients[i]=c;else siClients.push(c);
     const ex=siLsGet(SI_LSC).filter(x=>x.id!==id);ex.push(c);siLsSet(SI_LSC,ex);
-    S.client=id;siRender();toast('Cliente guardado');
+    S.client=id;siRender();renderCtClients();toast('Cliente guardado');
   }catch(e){toast('No se pudo guardar el cliente')}
 }
 function siList(){
@@ -470,3 +468,15 @@ function siBind(){
     }
   });
 }
+
+/* ---- lista de clientes: se carga al abrir la página (la usan Cotizaciones y Shipping) ---- */
+async function clientsInit(){
+  siLsGet(SI_LSC).forEach(c=>{const i=siClients.findIndex(x=>x.id===c.id);if(i>=0)siClients[i]=c;else siClients.push(c)});
+  renderCtClients();
+  if(!REMOTE)return;
+  try{
+    const cl=await siFetch('clientes','?select=*&order=name.asc');
+    if(cl.length){siClients=SI_CLIENTS.filter(s=>!cl.some(c=>c.id===s.id)).concat(cl.map(c=>({id:c.id,name:c.name,rnc:c.rnc||''})));renderCtClients();if(siLoaded)siRender()}
+  }catch(e){}
+}
+clientsInit();
