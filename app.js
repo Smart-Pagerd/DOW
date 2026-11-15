@@ -1,4 +1,16 @@
 const $=s=>document.querySelector(s);
+const LIBS={
+ pdfjs:['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',()=>window.pdfjsLib],
+ jspdf:['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',()=>window.jspdf],
+ jszip:['https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',()=>window.JSZip],
+ xlsx:['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',()=>window.XLSX],
+ exceljs:['https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',()=>window.ExcelJS],
+ siassets:['si-assets.js?v=4',()=>typeof SI_LOGO!=='undefined']};
+const _lp={};
+function need(k){
+  const[u,ok]=LIBS[k];if(ok())return Promise.resolve();
+  return _lp[k]||(_lp[k]=new Promise((res,rej)=>{const e=document.createElement('script');e.src=u;e.onload=res;e.onerror=()=>{delete _lp[k];rej(new Error('No se pudo cargar un componente. Revisa tu conexión y vuelve a intentar.'))};document.head.appendChild(e)}));
+}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const r2=n=>Math.round((n+Number.EPSILON)*100)/100;
@@ -12,11 +24,12 @@ let Q=null,editId=null,catalog=[],busy=false;
 /* ---------- UI helpers ---------- */
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),3200)}
 function count(el,to){const from=parseFloat(el.dataset.v||0);el.dataset.v=to;if(matchMedia('(prefers-reduced-motion:reduce)').matches){el.textContent=fmt(to);return}const t0=performance.now();(function s(t){const k=Math.min(1,(t-t0)/600),e=1-Math.pow(1-k,3);el.textContent=fmt(from+(to-from)*e);if(k<1)requestAnimationFrame(s)})(t0)}
-function tab(n){$('#vNew').style.display=n?'none':'';$('#vCat').classList.toggle('on',!!n);$('#tNew').classList.toggle('on',!n);$('#tCat').classList.toggle('on',!!n)}
-$('#tNew').onclick=()=>tab(0);$('#tCat').onclick=()=>{tab(1);refresh()};
+function tab(n){$('#vNew').style.display=n===0?'':'none';$('#vCat').classList.toggle('on',n===1);$('#vSI').classList.toggle('on',n===2);$('#tNew').classList.toggle('on',n===0);$('#tCat').classList.toggle('on',n===1);$('#tSI').classList.toggle('on',n===2)}
+$('#tNew').onclick=()=>tab(0);$('#tCat').onclick=()=>{tab(1);refresh()};$('#tSI').onclick=()=>{tab(2);siOpen()};
 
 /* ---------- PDF reading ---------- */
 async function readPdf(file){
+  await need('pdfjs');
   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,out=[];
   for(let p=1;p<=pdf.numPages;p++){
@@ -70,8 +83,10 @@ function autoLines(){
 }
 
 /* ---------- Editor ---------- */
-function startQuote(src,saved){
-  if(saved){Q=JSON.parse(JSON.stringify(saved));Q.src=saved.srcInfo||{m:{src:saved.origSrc||'NL'},items:[],total:saved.origTotal||0};editId=saved.id}
+function startQuote(src,saved,dup){
+  $('#draftBar').style.display='none';
+  if(saved){Q=JSON.parse(JSON.stringify(saved));Q.src=saved.srcInfo||{m:{src:saved.origSrc||'NL'},items:[],total:saved.origTotal||0};editId=saved.id;
+    if(dup){editId=null;Q.number=nextNum();Q.date=today();Q.due=today(new Date(Date.now()+7*864e5));delete Q.createdAt}}
   else{
     editId=null;const m=src.m;
     Q={number:nextNum(),date:today(),due:isoFrom(m.valid)||today(new Date(Date.now()+7*864e5)),bill:m.client||'',ship:m.client||'',notes:NOTES,origRef:m.ref,origSrc:m.src||'',origTotal:src.total,src};
@@ -79,12 +94,12 @@ function startQuote(src,saved){
   }
   $('#fNum').value=Q.number;$('#fDate').value=Q.date;$('#fDue').value=Q.due;$('#fBill').value=Q.bill;$('#fShip').value=Q.ship;$('#fNotes').value=Q.notes;
   $('#oSrc').textContent=Q.origSrc||'NL';
-  $('#editor').classList.add('on');renderLines();calc();
+  $('#editor').classList.add('on');renderLines();ctSyncClient();calc();
   $('#editor').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderLines(){
   Q.lines.forEach(l=>{if(isOrig(l)&&!INCO.includes(l.d))l.d='EXW'});
-  $('#lines').innerHTML=Q.lines.map((l,i)=>`<div class="line" style="animation-delay:${i*60}ms" data-i="${i}">
+  $('#lines').innerHTML=Q.lines.map((l,i)=>`<div class="line" style="animation-delay:${i*60}ms" data-i="${i}"><div class="lh">Línea ${i+1}</div>
     <div class="g2"><div><label>Producto o servicio</label><input data-k="p" value="${esc(l.p)}"></div><div>${isOrig(l)?`<label>INCOTERMS</label><select data-k="d">${INCO.map(o=>`<option${o===l.d?' selected':''}>${o}</option>`).join('')}</select>`:`<label>Descripción</label><textarea data-k="d" rows="2">${esc(l.d)}</textarea>`}</div></div>
     <div class="lr"><div><label>Impuesto</label><select data-k="t">${Object.keys(TAX).map(k=>`<option${k===l.t?' selected':''}>${k}</option>`).join('')}</select></div>
     <div><label>Cant.</label><input type="number" min="0" step="1" data-k="q" value="${l.q}"></div><div><label>Tarifa</label><input type="number" min="0" step="0.01" data-k="r" value="${l.r}"></div>
@@ -95,7 +110,7 @@ $('#lines').addEventListener('click',e=>{if(e.target.dataset.del!==undefined){Q.
 document.addEventListener('click',e=>{const a=e.target.closest('[data-add]');if(!a||!Q)return;const p=PRE[a.dataset.add];Q.lines.push(p?{p:p.p,d:p.d,q:1,r:p.r,t:p.t}:{p:'',d:'',q:1,r:0,t:'Exempt'});renderLines();calc()});
 $('#reset').onclick=()=>{if(!Q||!Q.src.items.length)return toast('No hay PDF original para recalcular');Q.lines=autoLines();renderLines();calc();toast('Precio recalculado')};
 ['fNum','fDate','fDue','fBill','fShip','fNotes'].forEach(id=>$('#'+id).addEventListener('input',()=>{if(Q)Qset({fNum:'number',fDate:'date',fDue:'due',fBill:'bill',fShip:'ship',fNotes:'notes'}[id],$('#'+id).value)}));
-function Qset(k,v){Q[k]=v}
+function Qset(k,v){Q[k]=v;saveDraft();if(k==='bill'||k==='ship')ctSyncClient()}
 function totals(q){
   const sub=r2(q.lines.reduce((a,l)=>a+l.q*l.r,0)),by={};
   q.lines.forEach(l=>{by[l.t]=r2((by[l.t]||0)+l.q*l.r)});
@@ -103,6 +118,7 @@ function totals(q){
   return{sub,rows,tax:r2(tax),total:r2(sub+tax)};
 }
 function calc(){
+  saveDraft();
   const T=totals(Q);
   count($('#dSub'),T.sub);count($('#gTot'),T.total);
   $('#oTot').textContent=fmt(Q.origTotal);
@@ -127,7 +143,7 @@ async function handle(file){
     if(!lines.length)throw new Error('El PDF no tiene texto legible (¿es un escaneo?)');
     const src=parseQuote(lines);st[1].className='st done';st[2].classList.add('act');await wait(450);
     if(!src.items.length)throw new Error('No pude identificar los cargos en este PDF. Puedes crear la cotización manualmente.');
-    st[2].className='st done';startQuote(src);toast('Revisa los datos antes de descargar');
+    st[2].className='st done';startQuote(src);setTimeout(()=>$('#steps').classList.remove('on'),1500);toast('Revisa los datos antes de descargar');
   }catch(e){toast(e.message||'No pude leer el PDF');st.forEach(s=>s.className='st')}
   busy=false;
 }
@@ -142,11 +158,14 @@ function makePdf(q){
   T('N.º de registro de la empresa N.º 1-',30,70);T('32-12996-2',30,80);T('ITBIS N.º de registro 132129962',30,92);
   ['Calle 17, SD Villa Carmen','Santo Domingo, Santo Domingo','11901','dopdivisas@gmail.com','+18095920826'].forEach((s,i)=>T(s,150,58+i*11));
   doc.addImage(LOGO,'PNG',322,24,240,60);
-  doc.setFillColor(234,243,252);doc.rect(0,120,W,150,'F');
-  F(7,1);T('Facturar a',30,142);T('Enviar a',386,142);F(8);T(q.bill||'',30,156);T(q.ship||'',386,156);
-  doc.setDrawColor(190,200,215);doc.setLineDashPattern([1.5,2],0);doc.line(30,190,570,190);doc.setLineDashPattern([],0);
-  F(8,1);T('Detalles de Cotización',30,214);F(7.5);T('N.º de Cotización: '+q.number,30,228);T('Fecha de Cotización: '+dmy(q.date),30,240);T('Fecha de vencimiento: '+dmy(q.due),30,252);
-  let y=300;const head=()=>{F(8);doc.setTextColor(...INK);T('N.º',30,y);T('Fecha',52,y);T('Producto o servicio',100,y);T('Descripción',212,y);T('Cant.',394,y,{align:'right'});T('Tarifa',448,y,{align:'right'});T('Importe',502,y,{align:'right'});T('Impuesto',512,y);doc.setDrawColor(...LN);doc.line(30,y+8,570,y+8);y+=8};
+  F(8);const wr=(t,w)=>String(t||'').split(/\n/).map(p=>p.trim()).filter(Boolean).flatMap(p=>doc.splitTextToSize(p,w));
+  const bl=wr(q.bill,300),sl=wr(q.ship,176),nl=Math.max(bl.length,sl.length,1);
+  const dY=152+(nl-1)*10+14,bandEnd=dY+78;
+  doc.setFillColor(234,243,252);doc.rect(0,118,W,bandEnd-118,'F');
+  F(7,1);T('Facturar a',30,138);T('Enviar a',386,138);F(8);bl.forEach((t,i)=>T(t,30,152+i*10));sl.forEach((t,i)=>T(t,386,152+i*10));
+  doc.setDrawColor(190,200,215);doc.setLineDashPattern([1.5,2],0);doc.line(30,dY,570,dY);doc.setLineDashPattern([],0);
+  F(8,1);T('Detalles de Cotización',30,dY+22);F(7.5);T('N.º de Cotización: '+q.number,30,dY+36);T('Fecha de Cotización: '+dmy(q.date),30,dY+48);T('Fecha de vencimiento: '+dmy(q.due),30,dY+60);
+  let y=bandEnd+30;const head=()=>{F(8);doc.setTextColor(...INK);T('N.º',30,y);T('Fecha',52,y);T('Producto o servicio',100,y);T('Descripción',212,y);T('Cant.',394,y,{align:'right'});T('Tarifa',448,y,{align:'right'});T('Importe',502,y,{align:'right'});T('Impuesto',512,y);doc.setDrawColor(...LN);doc.line(30,y+8,570,y+8);y+=8};
   head();
   q.lines.forEach((l,i)=>{
     F(7);const dl=doc.splitTextToSize(l.d||'',150),pl=(F(7.2,1),doc.splitTextToSize(l.p||'',100)),h=Math.max(30,Math.max(dl.length,pl.length)*9+18);
@@ -168,8 +187,8 @@ function makePdf(q){
   F(7.5);T('Fecha de aceptación',30,ay);T('Aceptado por',210,ay);doc.setDrawColor(150,150,150);doc.line(30,ay+30,180,ay+30);doc.line(210,ay+30,420,ay+30);
   return doc;
 }
-function download(q){
-  try{const doc=makePdf(q);doc.save('Cotizacion_'+(q.number||'DOWIE').replace(/[^\w-]/g,'')+'.pdf');toast('PDF descargado')}catch(e){toast('No se pudo generar el PDF')}
+async function download(q){
+  try{await need('jspdf');const doc=makePdf(q);doc.save('Cotizacion_'+(q.number||'DOWIE').replace(/[^\w-]/g,'')+'.pdf');toast('PDF descargado')}catch(e){toast(e.message||'No se pudo generar el PDF')}
 }
 $('#bPdf').onclick=()=>Q&&download(Q);
 
@@ -195,7 +214,7 @@ async function save(){
   const rec={number:Q.number,date:Q.date,due:Q.due,bill:Q.bill,ship:Q.ship,notes:Q.notes,lines:Q.lines,origRef:Q.origRef||'',origSrc:Q.origSrc||'',origTotal:Q.origTotal||0,total:T.total,sub:T.sub,createdAt:Q.createdAt||Date.now(),updatedAt:Date.now()};
   try{
     const o=Object.assign({id},rec);if(REMOTE)await sbUpsert(o);const i=catalog.findIndex(c=>c.id===id);if(i>=0)catalog[i]=o;else catalog.push(o);lsSave();renderCat();
-    editId=id;Q.createdAt=rec.createdAt;toast('Guardada en el catálogo');
+    editId=id;Q.createdAt=rec.createdAt;clearDraft();toast('Guardada en el catálogo');
   }catch(e){toast(REMOTE?'No se pudo guardar en la base de datos':'No se pudo guardar')}
 }
 $('#bSave').onclick=save;
@@ -204,13 +223,14 @@ function renderCat(){
   const f=($('#q').value||'').toLowerCase(),a=catalog.filter(c=>(c.number+' '+c.bill).toLowerCase().includes(f)).sort((x,y)=>(y.createdAt||0)-(x.createdAt||0));
   $('#list').innerHTML=a.length?a.map((c,i)=>`<div class="card item" style="animation-delay:${i*50}ms" data-id="${esc(c.id)}"><div><b>${esc(c.number)}</b><small>${esc(c.bill||'Sin cliente')} · ${esc(dmy(c.date))}${c.origRef?' · Ref. '+esc(c.origRef):''}</small></div>
     <div style="text-align:right"><b>${fmt(c.total)}</b><small>original ${fmt(c.origTotal)}</small></div>
-    <div style="display:flex;gap:6px"><button class="btn sm" data-a="pdf">PDF</button><button class="btn gh sm" data-a="edit">Editar</button><button class="btn gh sm" data-a="del">Eliminar</button></div></div>`).join(''):'<div class="card empty">No hay cotizaciones guardadas.</div>';
+    <div style="display:flex;gap:6px"><button class="btn sm" data-a="pdf">PDF</button><button class="btn gh sm" data-a="edit">Editar</button><button class="btn gh sm" data-a="dup">Duplicar</button><button class="btn gh sm" data-a="del">Eliminar</button></div></div>`).join(''):'<div class="card empty">No hay cotizaciones guardadas.</div>';
 }
 $('#q').oninput=renderCat;
 $('#list').addEventListener('click',async e=>{
   const b=e.target.closest('[data-a]');if(!b)return;const c=catalog.find(x=>x.id===b.closest('.item').dataset.id);if(!c)return;
   if(b.dataset.a==='pdf')download(c);
   if(b.dataset.a==='edit'){tab(0);startQuote(null,c)}
+  if(b.dataset.a==='dup'){tab(0);startQuote(null,c,true);toast('Copia lista; revisa y guarda')}
   if(b.dataset.a==='del'){
     if(!b.dataset.sure){b.dataset.sure=1;b.textContent='¿Seguro?';setTimeout(()=>{b.dataset.sure='';b.textContent='Eliminar'},3000);return}
     try{if(REMOTE)await sbDel(c.id);catalog=catalog.filter(x=>x!==c);lsSave();renderCat();toast('Cotización eliminada')}catch(er){toast('No se pudo eliminar')}
@@ -220,3 +240,43 @@ $('#exp').onclick=()=>{const b=new Blob([JSON.stringify(catalog,null,1)],{type:'
 $('#imp').onclick=()=>$('#impf').click();
 $('#impf').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const a=JSON.parse(await f.text());if(!Array.isArray(a))throw 0;a.forEach(c=>{if(c&&c.id&&c.lines){const i=catalog.findIndex(x=>x.id===c.id);if(i>=0)catalog[i]=c;else catalog.push(c)}});if(REMOTE)for(const c of a){if(c&&c.id&&c.lines)await sbUpsert(c)}lsSave();renderCat();toast('Catálogo importado')}catch(er){toast('Archivo no válido')}e.target.value=''};
 catalog=lsLoad();renderCat();refresh();
+
+/* ---- clientes en la cotización ---- */
+function renderCtClients(){
+  ['ctBill','ctShip'].forEach(id=>{
+    const sel=$('#'+id);if(!sel)return;const cur=sel.value;
+    sel.innerHTML='<option value="">— Elegir cliente (o escribir abajo) —</option>'+siClients.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    sel.value=cur;
+  });
+  ctSyncClient();
+}
+function ctSyncClient(){
+  if(!Q||typeof siMatch!=='function')return;
+  [['ctBill','bill'],['ctShip','ship']].forEach(([id,k])=>{
+    const sel=$('#'+id);if(!sel)return;
+    const m=siMatch((Q[k]||'').split('\n')[0],siClients);sel.value=m?m.id:'';
+  });
+}
+$('#ctBill').onchange=()=>{
+  const c=siClients.find(x=>x.id===$('#ctBill').value);if(!c||!Q)return;
+  const prev=(Q.bill||'').split('\n')[0].trim();
+  Q.bill=c.name+(c.rnc?'\nRNC: '+c.rnc:'');$('#fBill').value=Q.bill;
+  if(!(Q.ship||'').trim()||Q.ship.trim()===prev){Q.ship=c.name;$('#fShip').value=Q.ship}
+  ctSyncClient();saveDraft();
+};
+$('#ctShip').onchange=()=>{
+  const c=siClients.find(x=>x.id===$('#ctShip').value);if(!c||!Q)return;
+  Q.ship=c.name;$('#fShip').value=Q.ship;ctSyncClient();saveDraft();
+};
+/* ---- borrador automático ---- */
+const DK='dowie_ct_draft';
+function saveDraft(){if(!Q)return;clearTimeout(saveDraft.t);saveDraft.t=setTimeout(()=>{try{localStorage.setItem(DK,JSON.stringify({Q,editId}))}catch(e){}},500)}
+function clearDraft(){clearTimeout(saveDraft.t);try{localStorage.removeItem(DK)}catch(e){}}
+(function(){
+  let d=null;try{d=JSON.parse(localStorage.getItem(DK)||'null')}catch(e){}
+  if(!d||!d.Q||!d.Q.lines||!d.Q.lines.length)return;
+  $('#draftBar').innerHTML=`<span>Tienes una cotización sin guardar (<b>${esc(d.Q.number)}</b>).</span><span style="display:flex;gap:8px"><button class="btn sm" id="drRec">Recuperar</button><button class="btn gh sm" id="drDel">Descartar</button></span>`;
+  $('#draftBar').style.display='flex';
+  $('#drRec').onclick=()=>{startQuote(null,d.Q);Q.src=d.Q.src||Q.src;editId=d.editId||null};
+  $('#drDel').onclick=()=>{clearDraft();$('#draftBar').style.display='none'};
+})();
