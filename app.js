@@ -142,11 +142,14 @@ function makePdf(q){
   T('N.º de registro de la empresa N.º 1-',30,70);T('32-12996-2',30,80);T('ITBIS N.º de registro 132129962',30,92);
   ['Calle 17, SD Villa Carmen','Santo Domingo, Santo Domingo','11901','dopdivisas@gmail.com','+18095920826'].forEach((s,i)=>T(s,150,58+i*11));
   doc.addImage(LOGO,'PNG',322,24,240,60);
-  doc.setFillColor(234,243,252);doc.rect(0,120,W,150,'F');
-  F(7,1);T('Facturar a',30,142);T('Enviar a',386,142);F(8);T(q.bill||'',30,156);T(q.ship||'',386,156);
-  doc.setDrawColor(190,200,215);doc.setLineDashPattern([1.5,2],0);doc.line(30,190,570,190);doc.setLineDashPattern([],0);
-  F(8,1);T('Detalles de Cotización',30,214);F(7.5);T('N.º de Cotización: '+q.number,30,228);T('Fecha de Cotización: '+dmy(q.date),30,240);T('Fecha de vencimiento: '+dmy(q.due),30,252);
-  let y=300;const head=()=>{F(8);doc.setTextColor(...INK);T('N.º',30,y);T('Fecha',52,y);T('Producto o servicio',100,y);T('Descripción',212,y);T('Cant.',394,y,{align:'right'});T('Tarifa',448,y,{align:'right'});T('Importe',502,y,{align:'right'});T('Impuesto',512,y);doc.setDrawColor(...LN);doc.line(30,y+8,570,y+8);y+=8};
+  F(8);const wr=(t,w)=>String(t||'').split(/\n/).map(p=>p.trim()).filter(Boolean).flatMap(p=>doc.splitTextToSize(p,w));
+  const bl=wr(q.bill,300),sl=wr(q.ship,176),nl=Math.max(bl.length,sl.length,1);
+  const dY=152+(nl-1)*10+14,bandEnd=dY+78;
+  doc.setFillColor(234,243,252);doc.rect(0,118,W,bandEnd-118,'F');
+  F(7,1);T('Facturar a',30,138);T('Enviar a',386,138);F(8);bl.forEach((t,i)=>T(t,30,152+i*10));sl.forEach((t,i)=>T(t,386,152+i*10));
+  doc.setDrawColor(190,200,215);doc.setLineDashPattern([1.5,2],0);doc.line(30,dY,570,dY);doc.setLineDashPattern([],0);
+  F(8,1);T('Detalles de Cotización',30,dY+22);F(7.5);T('N.º de Cotización: '+q.number,30,dY+36);T('Fecha de Cotización: '+dmy(q.date),30,dY+48);T('Fecha de vencimiento: '+dmy(q.due),30,dY+60);
+  let y=bandEnd+30;const head=()=>{F(8);doc.setTextColor(...INK);T('N.º',30,y);T('Fecha',52,y);T('Producto o servicio',100,y);T('Descripción',212,y);T('Cant.',394,y,{align:'right'});T('Tarifa',448,y,{align:'right'});T('Importe',502,y,{align:'right'});T('Impuesto',512,y);doc.setDrawColor(...LN);doc.line(30,y+8,570,y+8);y+=8};
   head();
   q.lines.forEach((l,i)=>{
     F(7);const dl=doc.splitTextToSize(l.d||'',150),pl=(F(7.2,1),doc.splitTextToSize(l.p||'',100)),h=Math.max(30,Math.max(dl.length,pl.length)*9+18);
