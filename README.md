@@ -32,7 +32,7 @@ navegador (`localStorage`). **Exportar** / **Importar** genera y carga un `.json
 Nunca poner la clave `service_role` en estos archivos.
 
 ## Shipping Instruction
-Pestaña nueva: se sube el Packing List (.xlsx, .xls, .ods o .csv) y se genera
+Pestaña nueva: se sube el Packing List (.xlsx, .xls, .ods, .csv o PDF con texto) y se genera
 el Shipping Instruction en **PDF** o **Excel** (la plantilla de Excel va
 incrustada en `si-assets.js`, por eso el archivo sale idéntico).
 - Hay que elegir **LCL o FCL** antes de descargar.

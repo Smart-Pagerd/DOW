@@ -56,7 +56,18 @@ function siParse(grid){
   const pool=cells.filter(c=>c.r<5);
   const notLabel=c=>!/^(?:ADD(?:RESS)?|TO|FROM|CONSIGNEE|INV|DATE)\b/i.test(T(c).trim());
   const head=pool.find(c=>notLabel(c)&&/\bTEL\s*[:：]/i.test(T(c)))||pool.find(c=>notLabel(c)&&T(c).includes('\n'))||pool.find(c=>notLabel(c)&&/\bLTD\b|CO\.,/i.test(T(c)))||cells.find(c=>c.r<3&&notLabel(c));
-  if(head){
+  if(head&&/^\s*(?:TEL|PHONE)\b/i.test(T(head))){
+    const rowTxt=r=>cells.filter(x=>x.r===r).sort((a,b)=>a.c-b.c).map(T).join(' ').replace(/\s+/g,' ').trim();
+    const rows=[...new Set(cells.filter(x=>x.r<head.r).map(x=>x.r))].sort((a,b)=>a-b);
+    const co=/\b(?:CO\.?,?\s*LTD|LIMITED|LTD|INC|CORP|CORPORATION|COMPANY|FACTORY|TRADING|GMBH)\b/i;
+    let ni=-1;for(let i=rows.length-1;i>=0;i--){if(co.test(rowTxt(rows[i]))){ni=i;break}}
+    if(ni<0)ni=Math.max(0,rows.length-2);
+    if(rows.length){out.shipper.name=rowTxt(rows[ni]);out.shipper.address=rows.slice(ni+1).map(rowTxt).join(' ')}
+    const rest=rowTxt(head.r);
+    const t=rest.match(/TEL\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);if(t)out.shipper.phone=t[1].trim();
+    const k=rest.match(/CONTACT\s*[:：]?\s*(.+)$/i);if(k)out.shipper.contact=k[1].trim();
+    const em=rest.match(/[\w.+-]+@[\w-]+\.[\w.]+/);if(em)out.shipper.email=em[0];
+  }else if(head){
     const L=siSplitHead(T(head)),rest=L.slice(2).join(' ');
     out.shipper.name=(L[0]||'').replace(/^(FROM|SHIPPER)\s*[:：]\s*/i,'');out.shipper.address=L[1]||'';
     const t=rest.match(/TEL\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);if(t)out.shipper.phone=t[1].trim();
@@ -67,10 +78,17 @@ function siParse(grid){
   /* consignatario */
   const toRaw=val(/^(?:TO|CONSIGNEE|SHIP\s*TO|SOLD\s*TO|BUYER)\s*[:：]/i)||val(/^CONSIGNEE\b/i);
   if(toRaw){const L=toRaw.split(/\n/).map(x=>x.trim()).filter(Boolean);out.cnee.name=L[0]||'';if(L[1])out.cnee.address=L[1]}
-  const adRaw=val(/^ADD(?:RESS)?\s*[:：]/i);
+  const adCell=first(/^ADD(?:RESS)?\s*[:：]/i),adRaw=val(/^ADD(?:RESS)?\s*[:：]/i);
   if(adRaw){
     const L=adRaw.split(/\n/).map(x=>x.trim()).filter(Boolean);let addr=L[0]||'',rest=L.slice(1).join(' ');
     const ci=addr.search(/\s+Contacts?\s*[:：]/i);if(ci>0){rest=(addr.slice(ci)+' '+rest).trim();addr=addr.slice(0,ci).trim()}
+    if(grid.fuzzy&&adCell){
+      for(let r=adCell.r+1;r<=adCell.r+3;r++){
+        const c=cells.find(x=>x.r===r&&Math.abs(x.c-adCell.c)<=30);if(!c)continue;
+        const t=T(c).trim();if(/^(?:Contacts?|Tel|E-?mail)\b/i.test(t))break;
+        addr+=' '+t;
+      }
+    }
     out.cnee.address=addr||out.cnee.address||'';if(!rest)rest=adRaw;
     const m=rest.match(/Contacts?\s*[:：]\s*(.*?)\s+Tel\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);
     if(m){out.cnee.contact=m[1].trim();out.cnee.phone=m[2].trim()}
@@ -98,15 +116,30 @@ function siParse(grid){
   if(hdr){
     const col=n=>{const c=cells.find(x=>x.r===hdr.r&&n.test(T(x).trim()));return c?c.c:-1};
     const cD=hdr.c,cE=col(/^(?:CNTS|CTNS|CARTONS?|PKGS?)$/i),cG=col(/^G\.?\s*W/i),cS=col(/CTNS?\s*SIZE|CARTON\s*SIZE|MEAS/i);
-    let sc=0,sg=0,sv=0,n=0;
+    let sc=0,sg=0,sv=0,n=0,lo=0,hi=0,buf='';
+    if(grid.fuzzy){
+      const hr=cells.filter(x=>x.r===hdr.r).sort((a,b)=>a.c-b.c),pv=hr.filter(x=>x.c<hdr.c).pop(),nx=hr.find(x=>x.c>hdr.c);
+      lo=pv?pv.c+20:hdr.c-60;hi=nx?nx.c-4:hdr.c+80;
+    }
+    const flush=()=>{if(buf.trim())descs.push(buf.replace(/\(.*?\)/g,'').replace(/\s+/g,' ').trim().toUpperCase());buf=''};
     for(let r=hdr.r+1;r<grid.length;r++){
-      const g=grid[r]||[],at=c=>(c>=0?g[c]:null);
+      const g=grid[r]||[];
+      const at=c=>{
+        if(c<0)return null;
+        if(!grid.fuzzy)return g[c];
+        let best=null,bd=1e9;g.forEach((v,k)=>{const d=Math.abs(k-c);if(d<bd){bd=d;best=v}});
+        return bd<=30?best:null;
+      };
       if(g.some(v=>/^(?:MARK|TTL|TOTAL)/i.test(String(v==null?'':v).trim())))break;
-      const d=at(cD);if(d&&String(d).trim())descs.push(String(d).replace(/\(.*?\)/g,'').replace(/\s+/g,' ').trim().toUpperCase());
+      if(grid.fuzzy){
+        let t='';g.forEach((v,k)=>{if(k>=lo&&k<=hi&&isNaN(+v))t+=(t?' ':'')+String(v).trim()});
+        if(t){buf+=(buf?' ':'')+t;if((buf.match(/\(/g)||[]).length===(buf.match(/\)/g)||[]).length)flush()}
+      }else{const d=at(cD);if(d&&String(d).trim())descs.push(String(d).replace(/\(.*?\)/g,'').replace(/\s+/g,' ').trim().toUpperCase())}
       const e=num(at(cE));
       if(e!==null){sc+=e;n++;const gg=num(at(cG));if(gg!==null)sg+=gg*e;
-        const a=num(at(cS)),b=num(at(cS+1)),c=num(at(cS+2));if(a&&b&&c)sv+=a*b*c*e/1e6}
+        if(!grid.fuzzy){const a=num(at(cS)),b=num(at(cS+1)),c=num(at(cS+2));if(a&&b&&c)sv+=a*b*c*e/1e6}}
     }
+    flush();
     if(n){if(ct==null)ct=sc;if(gw==null)gw=sg;if(cb==null&&sv)cb=sv}
   }
   /* respaldo: buscar en todo el texto del documento si algo no se encontró por celdas */
@@ -203,6 +236,34 @@ const SI_ST={
  S:{f:'082B5A',c:'FFFFFF',s:9,b:1,a:'l'},L:{f:'EAF2FB',c:'082B5A',s:8,b:1,a:'l'},
  N:{f:'EAF2FB',c:'5B6B7F',s:7,b:0,a:'l'},G:{f:'FFFFFF',c:'082B5A',s:8,b:1,a:'c'},
  F:{f:'082B5A',c:'FFFFFF',s:8,b:1,a:'c',nb:1},V:{f:'FFF7E6',c:'152238',s:9,b:0,a:'c'}};
+
+
+/* ---- PDF -> cuadrícula (items = {s,x,y,w} por página) ---- */
+function siPdfGrid(pages){
+  const grid=[];let r=0;
+  pages.forEach(items=>{
+    const rows=[];
+    items.forEach(it=>{
+      if(!String(it.s).trim())return;
+      let row=rows.find(x=>Math.abs(x.y-it.y)<3);
+      if(!row){row={y:it.y,a:[]};rows.push(row)}
+      row.a.push(it);
+    });
+    rows.sort((a,b)=>b.y-a.y).forEach(row=>{
+      row.a.sort((a,b)=>a.x-b.x);
+      const cells=[];
+      row.a.forEach(it=>{
+        const last=cells[cells.length-1];
+        if(last&&it.x-last.end<=6){last.s+=(it.x-last.end>0.5?' ':'')+it.s;last.end=it.x+it.w}
+        else cells.push({s:it.s,x:it.x,end:it.x+it.w});
+      });
+      const g=[];cells.forEach(c=>{g[Math.round(c.x)]=c.s.trim()});
+      grid[r++]=g;
+    });
+  });
+  grid.fuzzy=true;
+  return grid;
+}
 
 /* ---- lector propio de .ods (content.xml) ---- */
 function siOdsParse(xml){
@@ -339,6 +400,18 @@ function siStart(p,fromBlank){
 }
 async function siGrid(file){
   const buf=await file.arrayBuffer();let sheets=[];
+  if(/\.pdf$/i.test(file.name)){
+    await need('pdfjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise,pages=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const tc=await(await pdf.getPage(p)).getTextContent();
+      pages.push(tc.items.map(i=>({s:i.str,x:i.transform[4],y:i.transform[5],w:i.width})));
+    }
+    const g=siPdfGrid(pages);
+    if(!g.length)throw new Error('Este PDF no tiene texto (parece un escaneo). Súbelo en Excel o llena los datos a mano.');
+    return g;
+  }
   if(/\.ods$/i.test(file.name)){
     try{await need('jszip');const z=await JSZip.loadAsync(buf);sheets=siOdsParse(await z.file('content.xml').async('string'))}catch(e){console.warn('ODS propio falló',e);sheets=[]}
   }
@@ -367,7 +440,7 @@ async function siGrid(file){
 const siWait=ms=>new Promise(r=>setTimeout(r,ms));
 async function siHandle(file){
   if(siBusy)return;
-  if(!/\.(xlsx|xls|ods|csv)$/i.test(file.name))return toast('Sube un Excel (.xlsx, .xls, .ods) o .csv');
+  if(!/\.(xlsx|xls|ods|csv|pdf)$/i.test(file.name))return toast('Sube un Excel (.xlsx, .xls, .ods), .csv o PDF');
   siBusy=true;const st=[...document.querySelectorAll('#siSteps .st')];
   $('#siSteps').classList.add('on');st.forEach(s=>s.className='st');st[0].classList.add('act');
   try{
