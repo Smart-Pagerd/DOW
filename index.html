@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DOWIE · Cotizaciones</title>
 <link rel="icon" type="image/png" href="favicon.png">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 <div class="wrap">
 <header>
   <div class="logo"><img src="logo.png" alt="DOWIE"></div>
-  <nav><button id="tNew" class="on">Cotizaciones</button><button id="tCat">Catálogo <span id="cnt">0</span></button><button id="tSI">Shipping Instruction</button></nav>
+  <nav><button id="tNew" class="on">Cotizaciones</button><button id="tCat">Catálogo <span id="cnt">0</span></button><button id="tSI">Shipping Instruction</button><button id="tCE">Confirmación de embarque</button></nav>
 </header>
 
 <section id="vNew">
@@ -86,12 +86,39 @@
   <h3 style="margin:26px 0 12px">Historial</h3>
   <div id="siList"></div>
 </section>
+<section id="vCE" class="cat">
+  <h1>Confirmación de embarque</h1>
+  <p class="sub">Completa los datos del zarpe y genera el aviso para el cliente.</p>
+  <div class="ce">
+    <div>
+      <div class="card"><h3>Datos del zarpe</h3>
+        <div class="g2 si">
+          <div class="wide"><label>Referencia *</label><input id="ceRef"></div>
+          <div class="wide"><label>Cliente (dueño de la mercancía) *</label><select id="ceSel" style="margin-bottom:6px"></select><input id="ceClient" placeholder="Nombre del cliente"></div>
+          <div><label>Lugar de zarpe *</label><input id="ceOrigin"></div>
+          <div><label>Destino *</label><input id="ceDest"></div>
+          <div><label>Fecha de zarpe (ETD) *</label><input type="date" id="ceDate"></div>
+          <div><label>Hora de zarpe *</label><input type="time" id="ceTime"></div>
+          <div class="wide"><label>Fecha estimada de llegada (ETA)</label><input type="date" id="ceEta"></div>
+        </div>
+      </div>
+      <div class="ceBtns">
+        <button class="btn" id="cePng">Descargar imagen</button>
+        <button class="btn gh" id="cePdf">Descargar PDF</button>
+        <button class="btn gh" id="ceCopy">Copiar mensaje</button>
+        <button class="btn or" id="ceShare" style="display:none">Compartir</button>
+      </div>
+    </div>
+    <div class="card"><canvas id="ceCv" width="1240" height="1754"></canvas></div>
+  </div>
+</section>
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="logo.js?v=4"></script>
-<script src="config.js?v=4"></script>
-<script src="app.js?v=4"></script>
-<script src="si.js?v=4"></script>
+<script src="logo.js?v=5"></script>
+<script src="config.js?v=5"></script>
+<script src="app.js?v=5"></script>
+<script src="si.js?v=5"></script>
+<script src="ce.js?v=5"></script>
 </body>
 </html>

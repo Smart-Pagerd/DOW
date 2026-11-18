@@ -37,7 +37,7 @@ function siSplitHead(t){
   }
   return L;
 }
-function siParse(grid){
+function siParseBase(grid){
   const cells=[];
   grid.forEach((row,r)=>(row||[]).forEach((v,c)=>{if(v!==undefined&&v!==null&&String(v).trim()!=='')cells.push({r,c,v})}));
   const T=c=>String(c.v),first=re=>cells.find(c=>re.test(T(c).trim()));
@@ -54,8 +54,8 @@ function siParse(grid){
   const out={shipper:{},cnee:{},ship:{},cargo:{},found:{}};
   /* embarcador */
   const pool=cells.filter(c=>c.r<5);
-  const notLabel=c=>!/^(?:ADD(?:RESS)?|TO|FROM|CONSIGNEE|INV|DATE)\b/i.test(T(c).trim());
-  const head=pool.find(c=>notLabel(c)&&/\bTEL\s*[:：]/i.test(T(c)))||pool.find(c=>notLabel(c)&&T(c).includes('\n'))||pool.find(c=>notLabel(c)&&/\bLTD\b|CO\.,/i.test(T(c)))||cells.find(c=>c.r<3&&notLabel(c));
+  const notLabel=c=>!/^(?:ADD(?:RESS)?|TO|FROM|CONSIGNEE|CONSIGNE|INV(?:OICE)?|DATE|FACTURA|BOOKING|PACKING|COMMERCIAL|BILL|PROFORMA)\b/i.test(T(c).trim());
+  const head=pool.find(c=>notLabel(c)&&/\bTEL\s*[:：]/i.test(T(c)))||pool.find(c=>notLabel(c)&&T(c).includes('\n'))||pool.find(c=>notLabel(c)&&/\bLTD\b|CO\.,/i.test(T(c)))||cells.find(c=>c.r<3&&notLabel(c)&&!/\d/.test(T(c)));
   if(head&&/^\s*(?:TEL|PHONE)\b/i.test(T(head))){
     const rowTxt=r=>cells.filter(x=>x.r===r).sort((a,b)=>a.c-b.c).map(T).join(' ').replace(/\s+/g,' ').trim();
     const rows=[...new Set(cells.filter(x=>x.r<head.r).map(x=>x.r))].sort((a,b)=>a-b);
@@ -147,14 +147,13 @@ function siParse(grid){
   if(!out.cnee.name)out.cnee.name=grab(/(?:^|\n)\s*(?:TO|CONSIGNEE|SHIP\s*TO|SOLD\s*TO)\s*[:：]\s*([^\n]+)/i);
   if(!out.cnee.address){const ad=grab(/(?:^|\n)\s*ADD(?:RESS)?\s*[:：]\s*([^\n]+)/i);out.cnee.address=ad.replace(/\s+Contacts?\s*[:：].*$/i,'').trim()}
   if(!out.cnee.contact){const m=blob.match(/Contacts?\s*[:：]\s*(.*?)\s+Tel\s*[:：]?\s*([+\d][\d\s\-+()]*\d)/i);if(m){out.cnee.contact=m[1].trim();out.cnee.phone=m[2].trim()}}
-  if(!out.shipper.name)out.shipper.name=grab(/^\s*([^\n]*(?:CO\.?,?\s*LTD|LIMITED|\bLTD\b|\bINC\b|\bCORP\b|S\.?A\.?)[^\n]*)/im);
   if(!out.ship.pol)out.ship.pol=grab(/Ports?\s+of\s+loading\s*[:：]?\s*([^\n:：]+)/i);
   if(ct==null){const v=grab(new RegExp('(?:TTL|TOTAL)\\s*(?:CTNS|CARTONS?|PKGS?|PACKAGES?)'+NUM,'i'));if(v)ct=num(v)}
   if(gw==null){const v=grab(new RegExp('(?:TTL|TOTAL)\\s*(?:G\\.?\\s*W\\.?|GROSS(?:\\s*WEIGHT)?)'+NUM,'i'));if(v)gw=num(v)}
   if(cb==null){const v=grab(new RegExp('(?:TTL|TOTAL)\\s*(?:CBM|VOLUME|MEASUREMENT|M3)'+NUM,'i'));if(v)cb=num(v)}
   const r2=x=>x==null?'':Math.round(x*100)/100;
   out.cargo.pieces=ct==null?'':ct;out.cargo.gw=r2(gw);out.cargo.cbm=r2(cb);
-  out.cargo.desc=[...new Set(descs)].filter(Boolean).slice(0,3).join(' / ');
+  out.cargo.desc=[...new Set(descs)].filter(Boolean).slice(0,4).join(' / ');
   out.found={
     'Embarcador':out.shipper.name,'Dirección del embarcador':out.shipper.address,
     'Consignatario (CNEE)':out.cnee.name,'Dirección del consignatario':out.cnee.address,
@@ -304,6 +303,141 @@ function siOdsParse(xml){
   }
   return sheets;
 }
+
+/* ---- extractor general: facturas comerciales, packing lists y similares ---- */
+function siExtra(grid,out){
+  const cells=[];
+  grid.forEach((row,r)=>(row||[]).forEach((v,c)=>{if(v!==undefined&&v!==null&&String(v).trim()!=='')cells.push({r,c,v})}));
+  if(!cells.length)return;
+  const fz=!!grid.fuzzy,tol=fz?40:2,reach=fz?220:3;
+  const T=c=>String(c.v).replace(/\s+/g,' ').trim();
+  const num=v=>{if(v===null||v===undefined)return null;if(typeof v==='number')return v;const n=parseFloat(String(v).replace(/,/g,''));return isNaN(n)?null:n};
+  const clean=s=>String(s||'').replace(/\s+/g,' ').replace(/\s+([,.;])/g,'$1').replace(/[\s,;]+$/,'').trim();
+  const rightOf=c=>cells.filter(x=>x.r===c.r&&x.c>c.c&&x.c-c.c<=reach).sort((a,b)=>a.c-b.c)[0];
+  const same=(re,c)=>{const t=T(c),m=t.match(re);return m?t.slice(m.index+m[0].length).replace(/^[\s:：\-#.]+/,'').trim():''};
+  const val=(re,c)=>{const v=same(re,c);if(v)return v;const r=rightOf(c);return r&&!/[:：]\s*$/.test(T(r))?T(r):''};
+  const first=re=>cells.find(c=>re.test(T(c)));
+  const setIf=(o,k,v)=>{v=clean(v);if(v&&!o[k])o[k]=v};
+  const L=re=>{const c=first(re);return c?val(re,c):''};
+  /* bloques con encabezado: CONSIGNEE / CONSIGNE / CLIENTE ... y SHIPPER / EXPORTER ... */
+  const HDR={
+    cnee:/^(?:CONSIGNEE|CONSIGNE|CONSIGNATARIO|SHIP\s*TO|SOLD\s*TO|BILL\s*TO|BUYER|IMPORTER|CUSTOMER)\b\s*[:：]?/i,
+    shipper:/^(?:SHIPPER|EXPORTER|SELLER|VENDOR|EMBARCADOR|EXPORTADOR|SUPPLIER)\b\s*[:：]?/i};
+  const FL=[
+    ['name',/^(?:CLIENT|CLIENTE|NAME|NOMBRE|COMPANY|EMPRESA|CUSTOMER)\b\s*[:：]/i],
+    ['address',/^(?:ADDRESS|ADDRES|ADDR|ADD|DIRECCI[ÓO]N|DIR)\b\s*[:：]/i],
+    ['phone',/^(?:PHONE|TEL|TELEPHONE|TEL[ÉE]FONO|CELL|MOBILE)\b\.?\s*[:：]/i],
+    ['email',/^(?:E-?MAIL|CORREO)\b\.?\s*[:：]/i],
+    ['tax',/^(?:TAX\s*ID|RNC|VAT|TIN|EIN|RUC|NIT|CUIT|RFC)\b\s*[:：#]?/i],
+    ['contact',/^(?:CONTACT|CONTACTO|ATTN|ATTENTION)\b\s*[:：]/i]];
+  const STOP=/^(?:ITEM|DESCRIPTION|DESCRIPCI|NO\.?\s*$|#\s*$)/i;
+  const block=(hre,tgt,taxKey)=>{
+    const h=first(hre);if(!h)return;
+    const hv=same(hre,h);if(hv)setIf(tgt,'name',hv.split(/\n/)[0]);
+    for(let r=h.r+1;r<=h.r+9;r++){
+      const rc=cells.filter(x=>x.r===r&&Math.abs(x.c-h.c)<=tol).sort((a,b)=>a.c-b.c);
+      if(rc.some(x=>STOP.test(T(x))||HDR.cnee.test(T(x))||HDR.shipper.test(T(x))))break;
+      rc.forEach(x=>FL.forEach(([k,re])=>{if(re.test(T(x)))setIf(tgt,k==='tax'?taxKey:k,val(re,x))}));
+    }
+  };
+  block(HDR.cnee,out.cnee,'rnc');block(HDR.shipper,out.shipper,'tax');
+  /* embarcador a partir del encabezado del documento (antes del bloque del consignatario) */
+  const stopRow=Math.min(14,...cells.filter(c=>/^(?:TO|ADD|ADDRESS|CONSIGN\w*|SHIP\s*TO|SOLD\s*TO|BILL\s*TO|BUYER|CLIENT|CLIENTE)\b\s*[:：]/i.test(T(c))).map(c=>c.r));
+  const skip=/^(?:INVOICE|FACTURA|DATE|FECHA|BOOKING|BILL\s*OF|B\/L|CONTAINER|SEAL|VOYAGE|PORT|MOVEMENT|SHIPPING|PACKING|COMMERCIAL|PAGE|PROFORMA)\b/i;
+  const co=/\b(?:LTD|LIMITED|SRL|S\.?R\.?L|S\.?A\.?S?|INC|CORP|LLC|CO\.|GMBH|LABORATORIOS?|COMPANY|FACTORY|TRADING|INDUSTRIAL)\b/i;
+  const sh=out.shipper;
+  cells.filter(c=>c.r<stopRow&&!skip.test(T(c))).sort((a,b)=>a.r-b.r||a.c-b.c).forEach(c=>{
+    const t=T(c);let used=false;
+    const em=t.match(/[\w.+-]+@[\w-]+\.[\w.]*\w/);if(em){used=true;if(!sh.email)sh.email=em[0]}
+    const ph=t.match(/(?:Tel(?:\.|[ée]fono)?|Phone|Cel)\s*[:：.]*\s*(\(?\+?\d[\d\s().\-]*\d)/i);if(ph){used=true;if(!sh.phone)sh.phone=clean(ph[1])}
+    const tx=t.match(/(?:RNC|RUC|NIT|TAX\s*ID|VAT|EIN|RFC)\s*[:：#.]*\s*([\w-]*\d[\w-]*)/i);if(tx){used=true;if(!sh.tax)sh.tax=tx[1]}
+    if(!used){
+      if(co.test(t)&&!sh.name&&t.length<90)sh.name=t;
+      else if(/\d|\b(?:CALLE|AVE|AV\.|STREET|ST\.|ROAD|RD\.|ZONA|KM)\b/i.test(t)&&!sh.address&&t.length>8)sh.address=t;
+    }
+  });
+  /* puertos, movimiento, incoterm, naviera */
+  const place=v=>{const p=clean(v).split(',').map(x=>x.trim()).filter(Boolean);return p.length>1?{city:p[0],country:p[p.length-1].replace(/\.$/,'')}:{city:p[0]||'',country:''}};
+  const POL=/^(?:Ports?\s+of\s+(?:loading|shipping|shipment)|Loading\s+Port|Port\s+of\s+origin|POL|Puerto\s+de\s+(?:carga|embarque))\b\s*[:：]?/i;
+  const POD=/^(?:Ports?\s+of\s+(?:discharge|destination|delivery)|Discharge\s+Port|Destination\s+Port|POD|Puerto\s+de\s+(?:descarga|destino))\b\s*[:：]?/i;
+  const pl=out.ship.pol||L(POL),pd=out.ship.pod||L(POD);
+  if(pl){const p=place(pl);out.ship.pol=p.city;if(p.country&&!out.ship.origin)out.ship.origin=p.country}
+  if(pd){const p=place(pd);out.ship.pod=p.city;if(p.country&&!out.ship.dest)out.ship.dest=p.country}
+  const mv=L(/^(?:MOVEMENT(?:\s+TERMS?)?|TIPO\s+DE\s+MOVIMIENTO)\b\s*[:：]?/i);
+  if(mv&&!out.ship.mov)out.ship.mov=/YARD\s*TO\s*YARD|\bCY\s*[\/\-]?\s*CY\b/i.test(mv)?'CY/CY':/CFS\s*(?:TO|[\/\-])?\s*CFS/i.test(mv)?'CFS/CFS':'OTRO';
+  const ic=first(/(?:INCOTERMS?|TERMS?\s+OF\s+(?:DELIVERY|SALE)|DELIVERY\s+TERMS?|PRICE\s+TERMS?|T[ÉE]RMINOS?\s+DE\s+ENTREGA)/i);
+  if(ic&&!out.ship.inco){const r=rightOf(ic),m=(T(ic)+' '+(r?T(r):'')).match(/\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b/i);if(m)out.ship.inco=m[1].toUpperCase()}
+  const bits=[],nav=L(/^(?:SHIPPING\s+COMPANY|SHIPPING\s+LINE|CARRIER|NAVIERA)\b\s*[:：]?/i),bk=L(/^BOOKING\s*(?:NO\.?|NUMBER|#)?\s*[:：]?/i);
+  if(nav)bits.push('Naviera: '+clean(nav));if(bk)bits.push('Booking: '+clean(bk));
+  if(bits.length)out.comments=bits.join(' · ');
+  /* tabla de artículos: bultos, peso bruto, volumen y descripción */
+  const CAT={desc:/DESCRIP|COMMODITY|PRODUCT|GOODS|MERCANC|ART[ÍI]CULO/i,pcs:/^(?:BOXES|BOX|CARTONS?|CTNS?|PKGS?|PACKAGES?|BULTOS|CAJAS|PALLETS?|CASES|CNTS)\b/i,gw:/GROSS|\bG\.?\s*W\b/i,cbm:/\bCBM\b|M³|\bM3\b|VOLUME|VOL\./i};
+  const by=new Map();cells.forEach(c=>{if(!by.has(c.r))by.set(c.r,[]);by.get(c.r).push(c)});
+  let H=null;
+  for(const [r,cs] of [...by.entries()].sort((a,b)=>a[0]-b[0])){
+    if(cs.find(c=>CAT.desc.test(T(c)))&&(cs.find(c=>CAT.pcs.test(T(c)))||cs.find(c=>CAT.gw.test(T(c))))){H={r,cs:cs.slice().sort((a,b)=>a.c-b.c)};break}
+  }
+  let spec=null;
+  if(H){
+    const isN=x=>/^-?[\d.,]+$/.test(T(x));
+    if(!fz){
+      const col=re=>H.cs.filter(c=>re.test(T(c)));
+      const cD=col(CAT.desc)[0],cP=col(CAT.pcs)[0],gws=col(CAT.gw);
+      const cG=gws.find(c=>/TOTAL|T\.?\s*G\.?\s*W/i.test(T(c)))||gws.find(c=>!/\bPER\b|\/\s*(?:BOX|CTN|CARTON|UNIT)/i.test(T(c)))||null,cV=col(CAT.cbm)[0];
+      const at=(row,hc)=>hc?row.find(x=>x.c===hc.c)||null:null;
+      spec={start:H.r+1,
+        desc:row=>{const d=at(row,cD);return d&&/[A-Za-z]{3}/.test(T(d))?T(d):''},
+        num:(row,k)=>{const x=at(row,{p:cP,g:cG,v:cV}[k]);return x?num(x.v):null}};
+    }else{
+      /* PDF: los encabezados se parten en varias líneas; se agrupan por columna */
+      const hd=H.cs.find(c=>CAT.desc.test(T(c)));
+      let fd=null;
+      for(const r of [...by.keys()].sort((a,b)=>a-b)){
+        if(r<=H.r)continue;const row=by.get(r);
+        if(row.some(x=>Math.abs(x.c-hd.c)<=130&&/[A-Za-z]{3}/.test(T(x)))&&row.filter(isN).length>=2){fd=r;break}
+      }
+      if(fd!==null){
+        const hc=cells.filter(c=>c.r>=H.r-3&&c.r<fd).sort((a,b)=>a.c-b.c),cl=[];
+        hc.forEach(c=>{const l=cl[cl.length-1];if(l&&c.c-l.last<=25){l.cells.push(c);l.last=c.c}else cl.push({cells:[c],last:c.c})});
+        cl.forEach(k=>{k.txt=k.cells.slice().sort((a,b)=>a.r-b.r).map(T).join(' ');k.x=k.cells.reduce((a,c)=>a+c.c,0)/k.cells.length});
+        const cD=cl.find(k=>CAT.desc.test(k.txt)),cP=cl.find(k=>CAT.pcs.test(k.txt)),gcs=cl.filter(k=>CAT.gw.test(k.txt));
+        const cG=gcs.find(k=>/TOTAL|T\.?\s*G\.?\s*W/i.test(k.txt))||gcs.find(k=>!/\bPER\b/i.test(k.txt))||null,cV=cl.find(k=>CAT.cbm.test(k.txt));
+        if(cD){
+          const i=cl.indexOf(cD),lo=cl[i-1]?cl[i-1].x+20:cD.x-100,hi=cl[i+1]?cl[i+1].x-4:cD.x+150;
+          spec={start:fd,
+            desc:row=>{const t=row.filter(x=>x.c>=lo&&x.c<=hi&&/[A-Za-z]/.test(T(x))).map(T).join(' ');return /[A-Za-z]{3}/.test(t)?t:''},
+            num:(row,k)=>{const h={p:cP,g:cG,v:cV}[k];if(!h)return null;let b=null,bd=1e9;row.forEach(x=>{const d=Math.abs(x.c-h.x);if(isN(x)&&d<bd){bd=d;b=x}});return bd<=35?num(b.v):null}};
+        }
+      }
+    }
+  }
+  if(spec){
+    let pcs=0,gw=0,cb=0,np=0,ng=0,nc=0,miss=0;const ds=[];
+    for(let r=spec.start;miss<3&&r<spec.start+500;r++){
+      const row=by.get(r);if(!row){miss++;continue}miss=0;
+      if(row.some(x=>/^(?:TOTAL|TTL|SUBTOTAL|PROVIDED|MARK)/i.test(T(x))))break;
+      const d=spec.desc(row);if(!d)continue;
+      if(ds.length&&row.filter(x=>/^-?[\d.,]+$/.test(T(x))).length===0)break;
+      ds.push(d.replace(/\(.*?\)/g,'').trim().toUpperCase());
+      const p=spec.num(row,'p'),g=spec.num(row,'g'),v=spec.num(row,'v');
+      if(p!==null){pcs+=p;np++}if(g!==null){gw+=g;ng++}if(v!==null){cb+=v;nc++}
+    }
+    const r2=x=>Math.round(x*100)/100;
+    if(out.cargo.pieces===''&&np)out.cargo.pieces=pcs;
+    if(out.cargo.gw===''&&ng)out.cargo.gw=r2(gw);
+    if(out.cargo.cbm===''&&nc)out.cargo.cbm=r2(cb);
+    if(!out.cargo.desc&&ds.length)out.cargo.desc=[...new Set(ds)].slice(0,4).join(' / ');
+  }
+}
+function siParse(grid){
+  const out=siParseBase(grid);siExtra(grid,out);
+  out.found={
+    'Embarcador':out.shipper.name,'Dirección del embarcador':out.shipper.address,
+    'Consignatario (CNEE)':out.cnee.name,'Dirección del consignatario':out.cnee.address,
+    'Puerto de carga (POL)':out.ship.pol,'Total de bultos':out.cargo.pieces,
+    'Peso bruto':out.cargo.gw,'Volumen (CBM)':out.cargo.cbm,'Descripción de la mercancía':out.cargo.desc};
+  return out;
+}
 /*__PURE_END__*/
 
 function siPdf(S){
@@ -387,13 +521,22 @@ function siRender(){
   $('#siClient').value=S.client||'';
   document.querySelectorAll('#siSvc button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.svc));
 }
-function siStart(p,fromBlank){
+function siFillShipper(){
+  if(S.shipper.name)return;
+  const dig=x=>String(x||'').replace(/\D/g,''),mail=String(S.shipper.email||'').toLowerCase();
+  const hit=siCat.map(r=>r.data&&r.data.shipper).find(sh=>sh&&sh.name&&((dig(sh.tax)&&dig(sh.tax)===dig(S.shipper.tax))||(mail&&String(sh.email||'').toLowerCase()===mail)));
+  if(hit)['name','address','contact','phone','email','tax'].forEach(k=>{if(!S.shipper[k])S.shipper[k]=hit[k]||''});
+}
+function siStart(p){
   S=siBlank();siEditId=null;S.date=today();
   if(p){
     Object.assign(S.shipper,p.shipper);Object.assign(S.cnee,p.cnee);
-    if(p.ship.pol)S.ship.pol=p.ship.pol;if(p.ship.pod)S.ship.pod=p.ship.pod;if(p.po)S.ship.po=p.po;
+    Object.keys(p.ship||{}).forEach(k=>{if(p.ship[k])S.ship[k]=p.ship[k]});
+    if(p.po&&!S.ship.po)S.ship.po=p.po;
     Object.assign(S.cargo,p.cargo);
-    const m=siMatch(S.cnee.name,siClients);if(m){S.client=m.id;S.cnee.name=m.name;S.cnee.rnc=m.rnc||''}
+    if(p.comments)S.comments=p.comments;
+    const m=siMatch(S.cnee.name,siClients);if(m){S.client=m.id;S.cnee.name=m.name;S.cnee.rnc=m.rnc||S.cnee.rnc||''}
+    siFillShipper();
   }
   $('#siEditor').classList.add('on');siRender();
   $('#siEditor').scrollIntoView({behavior:'smooth',block:'start'});
@@ -448,7 +591,7 @@ async function siHandle(file){
     const p=siParse(grid);
     const none=Object.values(p.found).every(v=>v===''||v==null);
     st[1].className='st done';st[2].classList.add('act');await siWait(350);
-    st[2].className='st done';siStart(p);toast(none?'No reconocí los campos de este archivo; llénalos a mano':'Revisa los datos y elige LCL o FCL');
+    st[2].className='st done';siStart(p);toast(none?'No reconocí los campos de este archivo; llénalos a mano':!S.shipper.name?'Falta el nombre del embarcador (puede venir en un logo). Escríbelo y guarda el SI: la próxima vez se llena solo.':'Revisa los datos y elige LCL o FCL');
     setTimeout(()=>$('#siSteps').classList.remove('on'),1500);
   }catch(e){console.error(e);toast(e.message||'No pude leer el archivo');st.forEach(s=>s.className='st')}
   siBusy=false;
@@ -504,7 +647,7 @@ function siList(){
   $('#siList').innerHTML=siCat.length?siCat.map(r=>`<div class="card item" data-id="${esc(r.id)}"><div><b>${esc(r.consignee||'Sin consignatario')}</b><small>${esc(r.ref||'Sin referencia')} · ${esc(r.svc||'')} · ${esc(siDmy(r.date))}</small></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-a="pdf">PDF</button><button class="btn gh sm" data-a="xls">Excel</button><button class="btn gh sm" data-a="edit">Editar</button><button class="btn gh sm" data-a="del">Eliminar</button></div></div>`).join(''):'<div class="card empty">No hay instrucciones guardadas.</div>';
 }
 function siBind(){
-  $('#siForm').addEventListener('input',e=>{const p=e.target.dataset.p;if(p)siSet(S,p,e.target.value)});
+  $('#siForm').addEventListener('input',e=>{const p=e.target.dataset.p;if(p){siSet(S,p,e.target.value);if(p==='ship.mov')S.movAuto=false}});
   $('#siForm').addEventListener('change',e=>{
     if(e.target.id==='siClient'){
       const c=siClients.find(x=>x.id===e.target.value);S.client=c?c.id:'';
@@ -515,7 +658,7 @@ function siBind(){
   $('#siForm').addEventListener('click',e=>{if(e.target.id==='siSaveCl')siSaveClient()});
   $('#siSvc').onclick=e=>{
     const b=e.target.closest('button');if(!b)return;S.svc=b.dataset.v;
-    if(!S.ship.mov||['CY/CY','CFS/CFS'].includes(S.ship.mov))S.ship.mov=S.svc==='FCL'?'CY/CY':'CFS/CFS';
+    if(!S.ship.mov||S.movAuto){S.ship.mov=S.svc==='FCL'?'CY/CY':'CFS/CFS';S.movAuto=true}
     $('#siSvc').classList.remove('err');siRender();
   };
   $('#siPdf').onclick=()=>{if(siOk())siDoPdf(S)};
