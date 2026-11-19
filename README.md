@@ -16,7 +16,7 @@ Página estática (HTML + CSS + JavaScript, sin frameworks ni build).
 - `index.html`: estructura
 - `styles.css`: estilos
 - `app.js`: lectura del PDF, cálculo de precio, generación del PDF y catálogo
-- `ce.js`: Confirmación de embarque
+- `ce.js`: Confirmación de zarpe
 - `si.js` / `si-assets.js`: Shipping Instruction (lógica, logo y plantilla de Excel)
 - `supabase-shipping.sql`: tablas `clientes` y `shipping_instructions`
 - `config.js`: URL y clave pública de Supabase
@@ -42,7 +42,7 @@ incrustada en `si-assets.js`, por eso el archivo sale idéntico).
 - Los clientes y el historial se guardan en Supabase: ejecutar `supabase-shipping.sql` una vez.
 - Para agregar un cliente fijo: editar `SI_CLIENTS` en `si.js` o usar el botón «Guardar como cliente».
 
-## Confirmación de embarque
+## Confirmación de zarpe
 Pestaña nueva: se llenan referencia, cliente, lugar de zarpe, destino, fecha y hora de zarpe (y ETA opcional)
 y se genera un aviso con el logo de DOWIE de fondo, para descargar como imagen o PDF, copiar el texto o compartir.
 

@@ -1,4 +1,4 @@
-/* ===== Confirmación de embarque ===== */
+/* ===== Confirmación de zarpe ===== */
 const CE_MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const CE_FIELDS={ref:'ceRef',client:'ceClient',origin:'ceOrigin',dest:'ceDest',date:'ceDate',time:'ceTime',eta:'ceEta'};
 const CE={ref:'',client:'',origin:'',dest:'',date:'',time:'',eta:''};
@@ -51,99 +51,102 @@ function ceRound(x,px,py,w,h,r){
   x.arcTo(px,py+h,px,py,r);x.arcTo(px,py,px+w,py,r);x.closePath();
 }
 function ceDraw(cv,c){
-  const W=1240,H=1754,x=cv.getContext('2d'),F='"Segoe UI",Arial,sans-serif';
+  const W=1240,x=cv.getContext('2d'),F='"Segoe UI",Arial,sans-serif';
   const BL='#1b5fb8',OR='#f7991c',INK='#1d2733',MU='#667085';
-  cv.width=W;cv.height=H;
-  x.fillStyle='#fff';x.fillRect(0,0,W,H);
+  const L=90,TW=W-2*L,p=ceParts(c),bw=(TW-40)/2,hasRoute=!!(c.origin||c.dest);
 
-  /* logo de DOWIE de fondo, grande y muy tenue */
+  /* 1) medir el contenido para que la tarjeta quede casi cuadrada y nada se corte */
+  x.font=`400 36px ${F}`;
+  const lines=ceWrap(x,p.carga,TW);
+  x.font=`600 32px ${F}`;
+  const etdL=c.date?[ceDate(c.date)].concat(c.time?[`${c.time} hrs.`]:[]):['—'],etaL=c.eta?[ceDate(c.eta)]:['Por confirmar'];
+  const cnt=a=>a.reduce((n,t)=>n+ceWrap(x,t,bw-80).length,0);
+  const bh=Math.max(170,104+Math.max(cnt(etdL),cnt(etaL))*42+22);
+  const yPar=504+lines.length*52;
+  const yBox=hasRoute?yPar+24+20+104:yPar+26;
+  const yClose=yBox+bh+52;
+  const H=Math.max(1200,yClose+52+40+130);
+  cv.width=W;cv.height=H;
+
+  /* 2) dibujo */
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);
   if(ceLogo.complete&&ceLogo.naturalWidth){
-    const w=1060,h=w*ceLogo.naturalHeight/ceLogo.naturalWidth;
-    x.save();x.globalAlpha=.07;x.drawImage(ceLogo,(W-w)/2,(H-h)/2+60,w,h);x.restore();
+    const w=1000,h=w*ceLogo.naturalHeight/ceLogo.naturalWidth;
+    x.save();x.globalAlpha=.07;x.drawImage(ceLogo,(W-w)/2,(H-h)/2+40,w,h);x.restore();
   }
-  /* decoración: círculos translúcidos en las esquinas */
   x.save();
-  x.globalAlpha=.10;x.fillStyle=OR;x.beginPath();x.arc(W+40,H-300,300,0,Math.PI*2);x.fill();
-  x.globalAlpha=.08;x.fillStyle=BL;x.beginPath();x.arc(-60,H-520,240,0,Math.PI*2);x.fill();
+  x.globalAlpha=.10;x.fillStyle=OR;x.beginPath();x.arc(W+40,H-260,290,0,Math.PI*2);x.fill();
+  x.globalAlpha=.08;x.fillStyle=BL;x.beginPath();x.arc(-60,H-480,230,0,Math.PI*2);x.fill();
   x.restore();
 
   /* franja superior */
-  x.fillStyle=BL;x.fillRect(0,0,W,270);
+  x.fillStyle=BL;x.fillRect(0,0,W,230);
   x.save();x.globalAlpha=.14;x.fillStyle='#fff';
-  x.beginPath();x.arc(W-90,40,210,0,Math.PI*2);x.fill();
-  x.beginPath();x.arc(W-330,250,120,0,Math.PI*2);x.fill();
+  x.beginPath();x.arc(W-90,30,190,0,Math.PI*2);x.fill();
+  x.beginPath();x.arc(W-330,220,110,0,Math.PI*2);x.fill();
   x.restore();
-  x.fillStyle=OR;x.fillRect(0,270,W,16);
-
-  /* logo en una placa blanca */
-  x.fillStyle='#fff';ceRound(x,70,62,400,146,20);x.fill();
+  x.fillStyle=OR;x.fillRect(0,230,W,14);
+  x.fillStyle='#fff';ceRound(x,70,50,390,130,20);x.fill();
   if(ceLogo.complete&&ceLogo.naturalWidth){
-    const w=340,h=w*ceLogo.naturalHeight/ceLogo.naturalWidth;
-    x.drawImage(ceLogo,100,135-h/2,w,h);
+    const w=330,h=w*ceLogo.naturalHeight/ceLogo.naturalWidth;
+    x.drawImage(ceLogo,100,115-h/2,w,h);
   }
-  /* título */
   x.textAlign='right';x.textBaseline='alphabetic';
-  x.fillStyle='#fff';x.font=`700 60px ${F}`;x.fillText('CONFIRMACIÓN',W-70,125);
-  x.fillStyle=OR;x.font=`700 60px ${F}`;x.fillText('DE EMBARQUE',W-70,198);
+  x.fillStyle='#fff';x.font=`700 58px ${F}`;x.fillText('CONFIRMACIÓN',W-70,110);
+  x.fillStyle=OR;x.font=`700 58px ${F}`;x.fillText('DE ZARPE',W-70,180);
   x.textAlign='left';
 
   /* referencia */
   const refTxt='REF: '+(c.ref||'[REFERENCIA]');
-  x.font=`700 46px ${F}`;
+  x.font=`700 44px ${F}`;
   const rw=Math.min(W-200,x.measureText(refTxt).width+90);
-  x.fillStyle='#fff6e8';ceRound(x,(W-rw)/2,340,rw,96,48);x.fill();
-  x.lineWidth=5;x.strokeStyle=OR;ceRound(x,(W-rw)/2,340,rw,96,48);x.stroke();
-  x.fillStyle=INK;x.textAlign='center';x.fillText(refTxt,W/2,404);x.textAlign='left';
+  x.fillStyle='#fff6e8';ceRound(x,(W-rw)/2,282,rw,88,44);x.fill();
+  x.lineWidth=5;x.strokeStyle=OR;ceRound(x,(W-rw)/2,282,rw,88,44);x.stroke();
+  x.fillStyle=INK;x.textAlign='center';x.fillText(refTxt,W/2,342);x.textAlign='left';
 
   /* texto */
-  const p=ceParts(c),L=110,TW=W-2*L;let y=540;
-  x.fillStyle=INK;x.font=`700 46px ${F}`;x.fillText(p.saludo,L,y);y+=86;
-  x.font=`400 40px ${F}`;
-  ceWrap(x,p.carga,TW).forEach(l=>{x.fillText(l,L,y);y+=62});
-  y+=40;
+  let y=436;
+  x.fillStyle=INK;x.font=`700 42px ${F}`;x.fillText(p.saludo,L,y);y=504;
+  x.font=`400 36px ${F}`;
+  lines.forEach(l=>{x.fillText(l,L,y);y+=52});
 
   /* ruta */
-  if(c.origin||c.dest){
-    const ox=L+20,dx=W-L-20,ry=y+30;
+  y=yPar+24;
+  if(hasRoute){
+    const ox=L+20,dx=W-L-20,ry=y+40;
     x.fillStyle=OR;x.beginPath();x.arc(ox,ry,16,0,Math.PI*2);x.fill();
     x.setLineDash([16,12]);x.lineWidth=5;x.strokeStyle=BL;x.beginPath();x.moveTo(ox+30,ry);x.lineTo(dx-34,ry);x.stroke();x.setLineDash([]);
     x.fillStyle=BL;x.beginPath();x.moveTo(dx-34,ry-18);x.lineTo(dx,ry);x.lineTo(dx-34,ry+18);x.closePath();x.fill();
     x.fillStyle=INK;
     const fitTxt=t=>{t=String(t||'').toUpperCase();let px=32;x.font=`700 ${px}px ${F}`;while(px>20&&x.measureText(t).width>TW/2-30){px-=2;x.font=`700 ${px}px ${F}`}return t};
-    x.textAlign='left';x.fillText(fitTxt(c.origin),L,ry+66);
-    x.textAlign='right';x.fillText(fitTxt(c.dest),W-L,ry+66);
-    x.textAlign='left';
-    x.font=`400 26px ${F}`;x.fillStyle=MU;x.fillText('Zarpe',L,ry-34);x.textAlign='right';x.fillText('Destino',W-L,ry-34);x.textAlign='left';
-    y=ry+130;
+    x.textAlign='left';x.fillText(fitTxt(c.origin),L,ry+64);
+    x.textAlign='right';x.fillText(fitTxt(c.dest),W-L,ry+64);
+    x.font=`400 26px ${F}`;x.fillStyle=MU;x.fillText('Destino',W-L,ry-30);x.textAlign='left';x.fillText('Zarpe',L,ry-30);
   }
 
   /* ETD / ETA */
-  const bw=(TW-40)/2,bh=c.eta?220:200;
-  const box=(bx,label,lines)=>{
-    x.fillStyle='#fff6e8';ceRound(x,bx,y,bw,bh,22);x.fill();
-    x.lineWidth=5;x.strokeStyle=OR;ceRound(x,bx,y,bw,bh,22);x.stroke();
-    x.fillStyle=OR;ceRound(x,bx,y,16,bh,8);x.fill();
-    x.fillStyle=BL;x.font=`700 46px ${F}`;x.fillText(label,bx+44,y+66);
-    x.fillStyle=INK;x.font=`600 34px ${F}`;
-    let ly=y+122;lines.forEach(t=>{ceWrap(x,t,bw-80).forEach(l=>{x.fillText(l,bx+44,ly);ly+=46})});
+  const box=(bx,label,ls)=>{
+    x.fillStyle='#fff6e8';ceRound(x,bx,yBox,bw,bh,22);x.fill();
+    x.lineWidth=5;x.strokeStyle=OR;ceRound(x,bx,yBox,bw,bh,22);x.stroke();
+    x.fillStyle=OR;ceRound(x,bx,yBox,16,bh,8);x.fill();
+    x.fillStyle=BL;x.font=`700 42px ${F}`;x.fillText(label,bx+44,yBox+58);
+    x.fillStyle=INK;x.font=`600 32px ${F}`;
+    let ly=yBox+106;ls.forEach(t=>{ceWrap(x,t,bw-80).forEach(l=>{x.fillText(l,bx+44,ly);ly+=42})});
   };
-  const etdLines=c.date?[ceDate(c.date)].concat(c.time?[`${c.time} hrs.`]:[]):['—'];
-  box(L,'ETD',etdLines);
-  box(L+bw+40,'ETA',c.eta?[ceDate(c.eta)]:['Por confirmar']);
-  y+=bh+80;
+  box(L,'ETD',etdL);box(L+bw+40,'ETA',etaL);
 
   /* cierre */
-  x.fillStyle=INK;x.font=`400 40px ${F}`;
-  x.fillText(p.cierre,L,y);y+=70;
-  x.font=`700 40px ${F}`;x.fillText('Cordialmente,',L,y);y+=60;
-  x.fillStyle=BL;x.fillText('Equipo DOWIE',L,y);
+  y=yClose;
+  x.fillStyle=INK;x.font=`400 36px ${F}`;x.fillText(p.cierre,L,y);y+=52;
+  x.font=`700 36px ${F}`;x.fillText('Cordialmente,',L,y);
+  const cw=x.measureText('Cordialmente, ').width;x.fillStyle=BL;x.fillText('Equipo DOWIE',L+cw,y);
 
   /* pie */
-  x.fillStyle=OR;x.fillRect(0,H-150,W,10);
-  x.fillStyle=BL;x.fillRect(0,H-140,W,140);
-  x.fillStyle='#fff';x.textAlign='center';x.font=`700 32px ${F}`;
-  x.fillText('DOWIE | DOP DIVISAS · PARTNERS',W/2,H-76);
-  x.font=`400 28px ${F}`;x.fillText('dopdivisas@gmail.com   •   809-592-0826',W/2,H-30);
+  x.fillStyle=OR;x.fillRect(0,H-130,W,10);
+  x.fillStyle=BL;x.fillRect(0,H-120,W,120);
+  x.fillStyle='#fff';x.textAlign='center';x.font=`700 30px ${F}`;
+  x.fillText('DOWIE | DOP DIVISAS · PARTNERS',W/2,H-66);
+  x.font=`400 26px ${F}`;x.fillText('dopdivisas@gmail.com   •   809-592-0826',W/2,H-26);
   x.textAlign='left';
 }
 function ceRender(){const cv=document.getElementById('ceCv');if(cv)ceDraw(cv,CE)}
@@ -163,7 +166,7 @@ function ceMissing(){
   return m;
 }
 function ceOk(){const m=ceMissing();if(!m.length)return true;toast('Falta: '+m.join(', '));return false}
-const ceName=ext=>'Confirmacion_Embarque_'+(CE.ref||'DOWIE').replace(/[^\w-]+/g,'_')+'.'+ext;
+const ceName=ext=>'Confirmacion_Zarpe_'+(CE.ref||'DOWIE').replace(/[^\w-]+/g,'_')+'.'+ext;
 function ceBlob(){return new Promise(res=>$('#ceCv').toBlob(res,'image/png'))}
 
 function ceBind(){
@@ -177,8 +180,9 @@ function ceBind(){
     if(!ceOk())return;
     try{
       await need('jspdf');
-      const doc=new window.jspdf.jsPDF({unit:'pt',format:'a4'});
-      doc.addImage($('#ceCv').toDataURL('image/jpeg',.95),'JPEG',0,0,595.28,841.89);
+      const cv=$('#ceCv'),pw=595.28,ph=pw*cv.height/cv.width;
+      const doc=new window.jspdf.jsPDF({unit:'pt',format:[pw,ph],orientation:ph>pw?'p':'l'});
+      doc.addImage(cv.toDataURL('image/jpeg',.95),'JPEG',0,0,pw,ph);
       doc.save(ceName('pdf'));toast('PDF descargado');
     }catch(e){toast(e.message||'No se pudo generar el PDF')}
   };
